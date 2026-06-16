@@ -11,10 +11,11 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [1] — Design system setup: shadcn/ui installation, dark theme CSS variables, component library
 - feature [2] — Editor chrome: navbar, project sidebar, editor layout wrapper
 - feature [3] — Clerk auth: provider, proxy, sign-in/sign-up pages, route protection, user menu
+- feature [4] — Landing page: xAI-inspired hero with dithering background, animated pointer highlight, radial glow CTA, border glow feature cards, inline Clerk auth modal with grainy blur overlay; no separate sign-in/sign-up routes
 
 ## Current Goal
 
-- None — feature [3] complete.
+- None — feature [4] complete.
 
 ## Next Up
 
@@ -37,6 +38,16 @@ Update this file whenever the current phase, active feature, or implementation s
 - Clerk dark theme appearance with CSS variable overrides for seamless integration
 - Auth pages use inline `style` props with CSS variables instead of Tailwind color utilities (Tailwind v4 semantic classes like `bg-background`, `text-foreground` do not resolve visually)
 - Do NOT import from `@clerk/ui` in application code — it triggers Clerk's bundled UI portal mode which covers the custom layout
+- Landing page follows xAI design language: single dark canvas, white outline pills, mono uppercase eyebrows, weight-400 display type with negative tracking, no shadows (hairline borders only)
+- Auth is handled inline on the landing page via modal overlay — no separate sign-in/sign-up routes
+- Clerk components use `routing="hash"` for in-modal authentication without page navigation
+- Landing page hero uses `@paper-design/shaders-react` Dithering component (white-on-black, 20% opacity) inside a rounded card
+- "together" uses Nanum Pen Script font with auto-playing PointerHighlight animation (cycles corners every 7.5s)
+- Feature cards wrapped in BorderGlow component with directional glow on hover (cyan, purple, green themes)
+- "Get started" button uses RadialGlowButton with animated radial gradient
+- ProgressiveBlur from @magicui used at viewport bottom for scroll transition effect; hides near page bottom so footer renders clear
+- Logo from `/public/logo_design.png` used in navbar branding
+- "Explore more" fixed at viewport bottom, smooth-scrolls to features, hides when scrolled past top
 
 ## Session Notes
 
@@ -53,11 +64,20 @@ Update this file whenever the current phase, active feature, or implementation s
 - Root layout is clean shell; `/editor` layout applies EditorLayout
 - Clerk auth wired: ClerkProvider in root layout with CSS variable overrides (no `@clerk/ui` theme import)
 - proxy.ts at root uses clerkMiddleware with createRouteMatcher for public auth routes
-- Sign-in/sign-up pages: two-panel grid layout (left branding, right Clerk form), hidden on small screens via `hidden lg:flex`
-- Root page (/) redirects authenticated users to /editor, unauthenticated to /sign-in
+- Sign-in/sign-up pages: two-panel grid layout (left branding, right Clerk form), hidden on small screens via `hidden lg:flex` — DEPRECATED: now redirect to `/`
+- Root page (/) redirects authenticated users to /editor, unauthenticated see landing page with inline auth modal
 - UserButton added to editor navbar right section
+- Landing page is a client component (`components/landing/landing-page.tsx`) with auth modal state
+- "Get started" button in navbar and hero opens Clerk SignIn/SignUp modal inline on the landing page
+- Auth modal: dark overlay (`rgba(0,0,0,0.75)` + `blur(12px)`) with SVG fractalNoise grain texture, Clerk components use `routing="hash"` for in-modal auth flow
+- Old `/sign-in` and `/sign-up` pages now redirect to `/` — all auth happens via the landing page modal
+- Clerk SignIn/SignUp components rendered inside modal with same CSS variable appearance overrides as root ClerkProvider
 - Added UI context CSS vars (--bg-base, --bg-surface, --bg-elevated, --text-primary, --text-secondary, --accent-primary, --state-*, etc.) to globals.css for Clerk appearance overrides
 - Added NEXT_PUBLIC_CLERK_SIGN_IN_URL and NEXT_PUBLIC_CLERK_SIGN_UP_URL env vars
+- Installed: `motion` (framer-motion successor), `@paper-design/shaders-react` (Dithering), `@aceternity/pointer-highlight`, `@magicui/progressive-blur`
+- Custom components: `BorderGlow` (components/ui/BorderGlow.tsx + .css), `RadialGlowButton` (components/ui/radial-glow-button.tsx), `HeroDithering` (components/ui/hero-dithering-card.tsx)
+- PointerHighlight extended with `autoPlay`, `interval`, `directions` props for self-cycling animation
+- Nanum Pen Script font loaded via next/font/google for "together" display text
 
 ### Auth Debugging Notes (session 2026-06-16)
 
