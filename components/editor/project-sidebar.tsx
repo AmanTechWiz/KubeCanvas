@@ -20,7 +20,7 @@ export function ProjectSidebar({ isOpen, onClose }: ProjectSidebarProps) {
       />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-surface transition-transform duration-200 ease-in-out ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-card transition-transform duration-200 ease-in-out ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -34,15 +34,15 @@ export function ProjectSidebar({ isOpen, onClose }: ProjectSidebarProps) {
 
               <TabsContent value="my-projects" className="mt-4 flex flex-1 items-center justify-center">
                 <div className="flex flex-col items-center gap-2 text-center">
-                  <FolderOpen className="h-8 w-8 text-muted" />
-                  <p className="text-sm text-muted">No projects yet</p>
+                  <FolderOpen className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">No projects yet</p>
                 </div>
               </TabsContent>
 
               <TabsContent value="shared" className="mt-4 flex flex-1 items-center justify-center">
                 <div className="flex flex-col items-center gap-2 text-center">
-                  <FolderOpen className="h-8 w-8 text-muted" />
-                  <p className="text-sm text-muted">No shared projects</p>
+                  <FolderOpen className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">No shared projects</p>
                 </div>
               </TabsContent>
             </Tabs>
