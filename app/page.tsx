@@ -1,7 +1,12 @@
-export default function Home() {
-  return (
-    <div className="flex flex-1 items-center justify-center">
-      <h1 className="text-4xl font-bold">KubeCanvas</h1>
-    </div>
-  )
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+
+export default async function Home() {
+  const { userId } = await auth();
+
+  if (userId) {
+    redirect("/editor");
+  } else {
+    redirect("/sign-in");
+  }
 }
