@@ -2,9 +2,15 @@
 
 Update this file whenever the current phase, active feature, or implementation state changes.
 
+## Phase Plan
+
+- **Phase 1: Foundation** (features 1–7) — Design system, editor chrome, Clerk auth, landing page, header, project dialogs, Prisma setup ✅
+- **Phase 2: Core Product** (features 8–12ish) — Canvas integration, real-time collaboration, API routes, AI generation, artifact storage
+- **Phase 3: Polish & Ship** — Performance, error handling, deployment, edge cases
+
 ## Current Phase
 
-- Phase 1: Foundation
+- Phase 2: Core Product
 
 ## Completed
 
@@ -27,6 +33,10 @@ Update this file whenever the current phase, active feature, or implementation s
 ## Open Questions
 
 - None yet.
+
+## Rules
+
+- Update "Current Phase" whenever all features in a phase are completed — do not leave it stale.
 
 ## Architecture Decisions
 
