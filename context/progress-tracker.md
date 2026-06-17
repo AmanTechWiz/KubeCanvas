@@ -1,0 +1,87 @@
+# Progress Tracker
+
+Update this file whenever the current phase, active feature, or implementation state changes.
+
+## Current Phase
+
+- Phase 1: Foundation
+
+## Completed
+
+- feature [1] — Design system setup: shadcn/ui installation, dark theme CSS variables, component library
+- feature [2] — Editor chrome: navbar, project sidebar, editor layout wrapper
+- feature [3] — Clerk auth: provider, proxy, sign-in/sign-up pages, route protection, user menu
+- feature [4] — Landing page: xAI-inspired hero with dithering background, animated pointer highlight, radial glow CTA, border glow feature cards, inline Clerk auth modal with grainy blur overlay; no separate sign-in/sign-up routes
+
+## Current Goal
+
+- None — feature [4] complete.
+
+## Next Up
+
+- Canvas integration with React Flow and Liveblocks
+
+## Open Questions
+
+- None yet.
+
+## Architecture Decisions
+
+- Tailwind v4 with `@import "tailwindcss"` syntax (not v3 directives)
+- shadcn/ui components in `components/ui/` are protected foundation components — do not modify after installation
+- Dark-only theme: `:root` contains dark values directly, no `.dark` class toggling needed
+- Brand colors mapped to shadcn/ui CSS variables: `--primary` = cyan (#00c8d4), `--accent` = indigo-purple (#6457f9)
+- Editor chrome components live in `components/editor/`
+- Sidebar uses floating overlay pattern — slides over canvas, does not push content
+- Editor route at `/editor` with its own layout; main site `/` is standalone
+- Clerk auth via `proxy.ts` (not middleware.ts) — public routes defined by sign-in/sign-up env vars
+- Clerk dark theme appearance with CSS variable overrides for seamless integration
+- Auth pages use inline `style` props with CSS variables instead of Tailwind color utilities (Tailwind v4 semantic classes like `bg-background`, `text-foreground` do not resolve visually)
+- Do NOT import from `@clerk/ui` in application code — it triggers Clerk's bundled UI portal mode which covers the custom layout
+- Landing page follows xAI design language: single dark canvas, white outline pills, mono uppercase eyebrows, weight-400 display type with negative tracking, no shadows (hairline borders only)
+- Auth is handled inline on the landing page via modal overlay — no separate sign-in/sign-up routes
+- Clerk components use `routing="hash"` for in-modal authentication without page navigation
+- Landing page hero uses `@paper-design/shaders-react` Dithering component (white-on-black, 20% opacity) inside a rounded card
+- "together" uses Nanum Pen Script font with auto-playing PointerHighlight animation (cycles corners every 7.5s)
+- Feature cards wrapped in BorderGlow component with directional glow on hover (cyan, purple, green themes)
+- "Get started" button uses RadialGlowButton with animated radial gradient
+- ProgressiveBlur from @magicui used at viewport bottom for scroll transition effect; hides near page bottom so footer renders clear
+- Logo from `/public/logo_design.png` used in navbar branding
+- "Explore more" fixed at viewport bottom, smooth-scrolls to features, hides when scrolled past top
+
+## Session Notes
+
+- Project uses Next.js 16, React 19, Tailwind v4
+- Dark-only theme with CSS custom properties defined in ui-context.md
+- Favicon lives in `app/favicon.ico` (App Router convention)
+- Installed components: Button, Card, Dialog, Input, Tabs, Textarea, ScrollArea
+- `lib/utils.ts` provides `cn()` helper using clsx + tailwind-merge
+- shadcn Tabs uses @base-ui/react/tabs — TabsPrimitive.Root, TabsPrimitive.List, TabsPrimitive.Tab, TabsPrimitive.Panel
+- shadcn Dialog already includes DialogHeader, DialogTitle, DialogDescription, DialogFooter
+- EditorNavbar: fixed h-12, left sidebar toggle, right empty, bg-surface with border-b
+- ProjectSidebar: floating overlay, w-72, slides from left, Tabs with My Projects/Shared, New Project button
+- EditorLayout wraps navbar + sidebar + children, manages sidebar state
+- Root layout is clean shell; `/editor` layout applies EditorLayout
+- Clerk auth wired: ClerkProvider in root layout with CSS variable overrides (no `@clerk/ui` theme import)
+- proxy.ts at root uses clerkMiddleware with createRouteMatcher for public auth routes
+- Sign-in/sign-up pages: two-panel grid layout (left branding, right Clerk form), hidden on small screens via `hidden lg:flex` — DEPRECATED: now redirect to `/`
+- Root page (/) redirects authenticated users to /editor, unauthenticated see landing page with inline auth modal
+- UserButton added to editor navbar right section
+- Landing page is a client component (`components/landing/landing-page.tsx`) with auth modal state
+- "Get started" button in navbar and hero opens Clerk SignIn/SignUp modal inline on the landing page
+- Auth modal: dark overlay (`rgba(0,0,0,0.75)` + `blur(12px)`) with SVG fractalNoise grain texture, Clerk components use `routing="hash"` for in-modal auth flow
+- Old `/sign-in` and `/sign-up` pages now redirect to `/` — all auth happens via the landing page modal
+- Clerk SignIn/SignUp components rendered inside modal with same CSS variable appearance overrides as root ClerkProvider
+- Added UI context CSS vars (--bg-base, --bg-surface, --bg-elevated, --text-primary, --text-secondary, --accent-primary, --state-*, etc.) to globals.css for Clerk appearance overrides
+- Added NEXT_PUBLIC_CLERK_SIGN_IN_URL and NEXT_PUBLIC_CLERK_SIGN_UP_URL env vars
+- Installed: `motion` (framer-motion successor), `@paper-design/shaders-react` (Dithering), `@aceternity/pointer-highlight`, `@magicui/progressive-blur`
+- Custom components: `BorderGlow` (components/ui/BorderGlow.tsx + .css), `RadialGlowButton` (components/ui/radial-glow-button.tsx), `HeroDithering` (components/ui/hero-dithering-card.tsx)
+- PointerHighlight extended with `autoPlay`, `interval`, `directions` props for self-cycling animation
+- Nanum Pen Script font loaded via next/font/google for "together" display text
+
+### Auth Debugging Notes (session 2026-06-16)
+
+- Root cause of missing two-panel layout: `import { dark } from "@clerk/ui/themes"` in layout.tsx triggered Clerk JS to load `@clerk/ui` from CDN, which rendered `<SignIn />` as a `ReactDOM.createPortal()` into `document.body`, covering the custom grid layout
+- Fix: removed the `@clerk/ui` import, removed `theme: dark` from appearance, used Clerk's native appearance API with `variables` only
+- Tailwind v4 semantic color classes (`bg-background`, `bg-card`, `text-foreground`, `text-muted-foreground`, `text-secondary-foreground`) do not resolve visually in the browser — must use inline `style` props with CSS variables instead
+- Playwright headless browser was essential for diagnosing the issue — `curl` only shows server-rendered HTML, not the client-side DOM state after Clerk JS hydration

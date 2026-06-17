@@ -48,6 +48,23 @@
 }
 
 :root {
+    --bg-base: #080809;
+    --bg-surface: #111114;
+    --bg-elevated: #18181c;
+    --bg-subtle: #1e1e23;
+    --border-default: #2a2a30;
+    --border-subtle: #3a3a42;
+    --text-primary: #f0f0f4;
+    --text-secondary: #c0c0cc;
+    --text-muted: #808090;
+    --text-faint: #505060;
+    --accent-primary: #00c8d4;
+    --accent-primary-dim: rgba(0, 200, 212, 0.12);
+    --accent-ai: #6457f9;
+    --accent-ai-text: #8b82ff;
+    --state-error: #ff4d4f;
+    --state-success: #34d399;
+    --state-warning: #fbbf24;
     --background: #080809;
     --foreground: #f0f0f4;
     --card: #111114;
