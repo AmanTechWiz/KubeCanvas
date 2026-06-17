@@ -2,9 +2,15 @@
 
 Update this file whenever the current phase, active feature, or implementation state changes.
 
+## Phase Plan
+
+- **Phase 1: Foundation** (features 1–7) — Design system, editor chrome, Clerk auth, landing page, header, project dialogs, Prisma setup ✅
+- **Phase 2: Core Product** (features 8–12ish) — Canvas integration, real-time collaboration, API routes, AI generation, artifact storage
+- **Phase 3: Polish & Ship** — Performance, error handling, deployment, edge cases
+
 ## Current Phase
 
-- Phase 1: Foundation
+- Phase 2: Core Product
 
 ## Completed
 
@@ -13,10 +19,12 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [3] — Clerk auth: provider, proxy, sign-in/sign-up pages, route protection, user menu
 - feature [4] — Landing page: xAI-inspired hero with dithering background, animated pointer highlight, radial glow CTA, border glow feature cards, inline Clerk auth modal with grainy blur overlay; no separate sign-in/sign-up routes
 - feature [5] — Header redesign: Framer Motion spring-animated header that morphs from full-width to floating pill on scroll, centered layout with left/right 50% + translateX, blur aesthetic with backdrop-filter, Features neon button, v0.1 green status pill, logo smooth-scroll to top
+- feature [6] — Project dialogs: editor home with create CTA, create/rename/delete project dialogs, sidebar project items with dropdown actions, mock data, useProjectDialogs hook
+- feature [7] — Prisma setup: Project + ProjectCollaborator models, Prisma client singleton with Accelerate/direct branching, initial migration
 
 ## Current Goal
 
-- None — feature [5] complete.
+- feature [8] — Canvas integration with React Flow and Liveblocks
 
 ## Next Up
 
@@ -25,6 +33,10 @@ Update this file whenever the current phase, active feature, or implementation s
 ## Open Questions
 
 - None yet.
+
+## Rules
+
+- Update "Current Phase" whenever all features in a phase are completed — do not leave it stale.
 
 ## Architecture Decisions
 
@@ -55,19 +67,21 @@ Update this file whenever the current phase, active feature, or implementation s
 - Header always has `backdrop-filter: blur(20px)` for frosted glass aesthetic in both states
 - NeonButton component for Features link with white neon gradient lines on hover
 - v0.1 status pill with green neon vibe (green-500 text/bg/border, pulsing dot, mono font)
+- `hooks/` directory for shared React hooks
+- useProjectDialogs hook centralizes dialog, form, and mock data state for editor
 
 ## Session Notes
 
 - Project uses Next.js 16, React 19, Tailwind v4
 - Dark-only theme with CSS custom properties defined in ui-context.md
 - Favicon lives in `app/favicon.ico` (App Router convention)
-- Installed components: Button, Card, Dialog, Input, Tabs, Textarea, ScrollArea
+- Installed components: Button, Card, Dialog, Input, Tabs, Textarea, ScrollArea, DropdownMenu
 - `lib/utils.ts` provides `cn()` helper using clsx + tailwind-merge
 - shadcn Tabs uses @base-ui/react/tabs — TabsPrimitive.Root, TabsPrimitive.List, TabsPrimitive.Tab, TabsPrimitive.Panel
 - shadcn Dialog already includes DialogHeader, DialogTitle, DialogDescription, DialogFooter
 - EditorNavbar: fixed h-12, left sidebar toggle, right empty, bg-surface with border-b
 - ProjectSidebar: floating overlay, w-72, slides from left, Tabs with My Projects/Shared, New Project button
-- EditorLayout wraps navbar + sidebar + children, manages sidebar state
+- EditorLayout wraps navbar + sidebar + children, manages sidebar state + dialog state via useProjectDialogs
 - Root layout is clean shell; `/editor` layout applies EditorLayout
 - Clerk auth wired: ClerkProvider in root layout with CSS variable overrides (no `@clerk/ui` theme import)
 - proxy.ts at root uses clerkMiddleware with createRouteMatcher for public auth routes
@@ -85,6 +99,31 @@ Update this file whenever the current phase, active feature, or implementation s
 - Custom components: `BorderGlow` (components/ui/BorderGlow.tsx + .css), `RadialGlowButton` (components/ui/radial-glow-button.tsx), `HeroDithering` (components/ui/hero-dithering-card.tsx)
 - PointerHighlight extended with `autoPlay`, `interval`, `directions` props for self-cycling animation
 - Nanum Pen Script font loaded via next/font/google for "together" display text
+
+### Project Dialogs Notes (session 2026-06-17)
+
+- Editor home shows heading, description, and "New Project" button centered in canvas area
+- Three dialogs: Create, Rename, Delete — all use shadcn Dialog (base-ui)
+- Create dialog: name input + live slug preview using `generateSlug()` helper
+- Rename dialog: prefilled input, auto-focus, Enter key submits
+- Delete dialog: destructive confirmation only, no input
+- `useProjectDialogs` hook manages dialog/form/loading state and mock project CRUD
+- Mock data in `lib/mock-projects.ts` — 3 sample projects (2 owned, 1 shared)
+- Sidebar project items show dropdown actions (rename/delete) only for owned projects
+- Shared projects render without action menu
+- DropdownMenu installed from shadcn (base-ui `@base-ui/react/menu`)
+- Mobile backdrop scrim already existed — no changes needed
+- EditorLayout wires hook to sidebar + dialogs; page receives `onCreateProject` callback
+- No API calls or persistence — pure mock data
+
+### Prisma Setup Notes (session 2026-06-17)
+
+- Prisma schema at `prisma/schema.prisma` with `prisma.config.ts` pointing to `prisma/` directory
+- Models: `Project` (ownerId, name, description, status enum DRAFT/ARCHIVED, canvasJsonPath, timestamps) and `ProjectCollaborator` (projectId, email, cascade delete, unique constraint)
+- Generator output to `app/generated/prisma/` for Next.js compatibility
+- `lib/prisma.ts`: cached singleton using `@prisma/adapter-pg` for direct connections, Accelerate branch for `prisma+postgres://` URLs
+- `prisma.config.ts` loads `.env.local` via `dotenv` config for DATABASE_URL
+- Migration: `prisma/migrations/20260617200317_init/`
 
 ### Header Redesign Notes (session 2026-06-17)
 
