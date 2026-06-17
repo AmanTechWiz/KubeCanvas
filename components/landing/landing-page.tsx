@@ -5,9 +5,11 @@ import { SignIn } from "@clerk/nextjs";
 import BorderGlow from "@/components/ui/BorderGlow";
 import { HeroDithering } from "@/components/ui/hero-dithering-card";
 import { ProgressiveBlur } from "@/components/ui/progressive-blur";
+import { Header } from "@/components/ui/header-2";
 
 export function LandingPage() {
   const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [showExplore, setShowExplore] = useState(true);
   const [showBlur, setShowBlur] = useState(true);
   const featuresRef = useRef<HTMLDivElement>(null);
@@ -23,6 +25,11 @@ export function LandingPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  function openAuth(mode: "sign-in" | "sign-up") {
+    setAuthMode(mode);
+    setAuthOpen(true);
+  }
+
   function scrollToFeatures() {
     featuresRef.current?.scrollIntoView({ behavior: "smooth" });
   }
@@ -32,40 +39,11 @@ export function LandingPage() {
       className="flex min-h-screen flex-col"
       style={{ backgroundColor: "var(--bg-base)" }}
     >
-      {/* Nav */}
-      <nav
-        className="fixed top-0 z-50 flex h-14 w-full items-center justify-between px-6"
-        style={{
-          backgroundColor: "var(--bg-base)",
-          borderBottom: "1px solid var(--border-default)",
-        }}
-      >
-        <span
-          className="text-sm"
-          style={{
-            color: "var(--text-primary)",
-            fontFamily: "var(--font-geist-mono)",
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-          }}
-        >
-          <img src="/logo_design.png" alt="KubeCanvas" className="h-24 w-auto" />
-        </span>
-        <button
-          onClick={() => setAuthOpen(true)}
-          className="inline-flex h-8 cursor-pointer items-center rounded-[9999px] px-4 text-sm transition-colors"
-          style={{
-            color: "var(--text-primary)",
-            border: "1px solid rgba(255, 255, 255, 0.25)",
-            backgroundColor: "transparent",
-          }}
-        >
-          Login
-        </button>
-      </nav>
+      {/* Header */}
+      <Header onLogin={() => openAuth("sign-in")} />
 
       {/* Hero */}
-      <section className="flex min-h-screen flex-col items-center justify-center px-6 pt-14">
+      <section className="flex min-h-screen flex-col items-center justify-center px-6 pt-8 pb-24">
         <HeroDithering onGetStarted={() => setAuthOpen(true)} />
       </section>
 
@@ -115,7 +93,7 @@ export function LandingPage() {
       </div>
 
       {/* Features */}
-      <section ref={featuresRef} className="relative px-6 py-24">
+      <section id="features" ref={featuresRef} className="relative px-6 py-24">
         <div className="mx-auto max-w-5xl">
           <p
             className="mb-3 text-sm"

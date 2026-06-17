@@ -12,10 +12,11 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [2] — Editor chrome: navbar, project sidebar, editor layout wrapper
 - feature [3] — Clerk auth: provider, proxy, sign-in/sign-up pages, route protection, user menu
 - feature [4] — Landing page: xAI-inspired hero with dithering background, animated pointer highlight, radial glow CTA, border glow feature cards, inline Clerk auth modal with grainy blur overlay; no separate sign-in/sign-up routes
+- feature [5] — Header redesign: Framer Motion spring-animated header that morphs from full-width to floating pill on scroll, centered layout with left/right 50% + translateX, blur aesthetic with backdrop-filter, Features neon button, v0.1 green status pill, logo smooth-scroll to top
 
 ## Current Goal
 
-- None — feature [4] complete.
+- None — feature [5] complete.
 
 ## Next Up
 
@@ -48,6 +49,12 @@ Update this file whenever the current phase, active feature, or implementation s
 - ProgressiveBlur from @magicui used at viewport bottom for scroll transition effect; hides near page bottom so footer renders clear
 - Logo from `/public/logo_design.png` used in navbar branding
 - "Explore more" fixed at viewport bottom, smooth-scrolls to features, hides when scrolled past top
+- Header uses Framer Motion (`motion` package) for spring-animated morph between full-width and floating pill states
+- Header centered via `left-1/2` + `style={{ x: '-50%' }}` instead of `mx-auto`
+- Logo stays constant size (h-10 md:h-26) — does not shrink on scroll
+- Header always has `backdrop-filter: blur(20px)` for frosted glass aesthetic in both states
+- NeonButton component for Features link with white neon gradient lines on hover
+- v0.1 status pill with green neon vibe (green-500 text/bg/border, pulsing dot, mono font)
 
 ## Session Notes
 
@@ -78,6 +85,21 @@ Update this file whenever the current phase, active feature, or implementation s
 - Custom components: `BorderGlow` (components/ui/BorderGlow.tsx + .css), `RadialGlowButton` (components/ui/radial-glow-button.tsx), `HeroDithering` (components/ui/hero-dithering-card.tsx)
 - PointerHighlight extended with `autoPlay`, `interval`, `directions` props for self-cycling animation
 - Nanum Pen Script font loaded via next/font/google for "together" display text
+
+### Header Redesign Notes (session 2026-06-17)
+
+- Switched header from CSS `transition-all` to Framer Motion spring physics (`stiffness: 200, damping: 25, mass: 0.8`) for smooth morph animation
+- `motion.header` animates: width, marginTop, borderRadius, backgroundColor, backdropFilter, boxShadow, borderWidth, borderColor
+- Logo uses `motion.img` for smooth height transitions (now static at h-10/h-26)
+- Header centered on screen using `left-1/2` + `style={{ x: '-50%' }}` — works for both full-width and compact states
+- Unscrolled state: `rgba(9, 9, 11, 0.7)` background with `blur(20px)`, no border
+- Scrolled state: `rgba(9, 9, 11, 0.8)` background with `blur(20px)`, `max-width: min(1024px, calc(100% - 32px))`, `borderRadius: 9999`, `marginTop: 16px`
+- Created `NeonButton` component (`components/ui/neon-button.tsx`) with default/solid/ghost variants, `neonColor` prop for custom gradient
+- Created `LiquidButton` component (`components/ui/liquid-glass-button.tsx`) with glass filter SVG effect (not currently used in header)
+- Features button uses NeonButton with white neon gradient, white-tinted bg (`!bg-white/5`), white border (`!border-white/20`)
+- v0.1 pill: green-500 text, green background glow, pulsing dot, mono font
+- Logo click smooth-scrolls to top instead of page reload
+- Hero section pushed up with `pt-8 pb-24` for better vertical centering
 
 ### Auth Debugging Notes (session 2026-06-16)
 
