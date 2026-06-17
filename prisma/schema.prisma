@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProjectStatus {
+  DRAFT
+  ARCHIVED
+}
+
+// I applied one to many relation here as a project will have many projectCollabs...
+
+model Project {
+  id               String          @id @default(cuid())
+  ownerId          String
+  name             String
+  description      String?
+  status           ProjectStatus   @default(DRAFT)
+  canvasJsonPath   String?         // null values can be allowed here...
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  collaborators    ProjectCollaborator[]
+
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+model ProjectCollaborator {
+  id              String   @id @default(cuid())
+  projectId       String
+  email           String
+  createdAt       DateTime @default(now())
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, email])
+  @@index([email])
+  @@index([projectId, createdAt])
+}
