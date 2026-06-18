@@ -47,6 +47,17 @@ export function EditorLayoutClient({
     refresh: () => router.refresh(),
   })
 
+  // Inside a workspace room — the room page provides its own chrome
+  const isWorkspace = /^\/editor\/[^/]+/.test(pathname)
+
+  if (isWorkspace) {
+    return (
+      <EditorContext.Provider value={{ openCreate }}>
+        {children}
+      </EditorContext.Provider>
+    )
+  }
+
   return (
     <EditorContext.Provider value={{ openCreate }}>
       <div className="flex h-screen flex-col">

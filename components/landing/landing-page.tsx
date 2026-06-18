@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { SignIn } from "@clerk/nextjs";
+import { SignIn, SignUp } from "@clerk/nextjs";
 import BorderGlow from "@/components/ui/BorderGlow";
 import { HeroDithering } from "@/components/ui/hero-dithering-card";
 import { ProgressiveBlur } from "@/components/ui/progressive-blur";
@@ -13,6 +13,33 @@ export function LandingPage() {
   const [showExplore, setShowExplore] = useState(true);
   const [showBlur, setShowBlur] = useState(true);
   const featuresRef = useRef<HTMLDivElement>(null);
+  const clerkContainerRef = useRef<HTMLDivElement>(null);
+
+  // Intercept Clerk's internal sign-up/sign-in link clicks to prevent
+  // path-based navigation (which would redirect to /).
+  useEffect(() => {
+    const container = clerkContainerRef.current;
+    if (!container) return;
+
+    function handleClick(e: MouseEvent) {
+      const target = (e.target as HTMLElement).closest("a");
+      if (!target) return;
+      const href = target.getAttribute("href") || "";
+      // Clerk links to /sign-up or /sign-in
+      if (href.includes("/sign-up") || href.includes("/sign-in")) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (href.includes("/sign-up")) {
+          setAuthMode("sign-up");
+        } else {
+          setAuthMode("sign-in");
+        }
+      }
+    }
+
+    container.addEventListener("click", handleClick, true);
+    return () => container.removeEventListener("click", handleClick, true);
+  }, [authOpen]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -274,24 +301,76 @@ export function LandingPage() {
               <path d="M1 1l10 10M11 1L1 11" />
             </svg>
           </button>
-          <div className="relative z-10" onClick={(e) => e.stopPropagation()}>
-            <SignIn
-              routing="hash"
-              appearance={{
-                variables: {
-                  colorBackground: "var(--bg-surface)",
-                  colorForeground: "var(--text-primary)",
-                  colorInput: "var(--bg-elevated)",
-                  colorInputForeground: "var(--text-primary)",
-                  colorNeutral: "var(--text-secondary)",
-                  colorPrimary: "var(--accent-primary)",
-                  colorPrimaryForeground: "var(--bg-base)",
-                  colorDanger: "var(--state-error)",
-                  colorSuccess: "var(--state-success)",
-                  colorWarning: "var(--state-warning)",
-                },
-              }}
-            />
+          <div className="relative z-10" ref={clerkContainerRef} onClick={(e) => e.stopPropagation()}>
+            {authMode === "sign-in" ? (
+              <SignIn
+                routing="hash"
+                forceRedirectUrl="/editor"
+                appearance={{
+                  variables: {
+                    colorBackground: "var(--bg-surface)",
+                    colorForeground: "var(--text-primary)",
+                    colorInput: "var(--bg-elevated)",
+                    colorInputForeground: "var(--text-primary)",
+                    colorNeutral: "var(--text-secondary)",
+                    colorPrimary: "var(--accent-primary)",
+                    colorPrimaryForeground: "var(--bg-base)",
+                    colorDanger: "var(--state-error)",
+                    colorSuccess: "var(--state-success)",
+                    colorWarning: "var(--state-warning)",
+                  },
+                }}
+              />
+            ) : (
+              <SignUp
+                routing="hash"
+                forceRedirectUrl="/editor"
+                appearance={{
+                  variables: {
+                    colorBackground: "var(--bg-surface)",
+                    colorForeground: "var(--text-primary)",
+                    colorInput: "var(--bg-elevated)",
+                    colorInputForeground: "var(--text-primary)",
+                    colorNeutral: "var(--text-secondary)",
+                    colorPrimary: "var(--accent-primary)",
+                    colorPrimaryForeground: "var(--bg-base)",
+                    colorDanger: "var(--state-error)",
+                    colorSuccess: "var(--state-success)",
+                    colorWarning: "var(--state-warning)",
+                  },
+                }}
+              />
+            )}
+
+            {/* Toggle sign-in / sign-up */}
+            <p
+              className="mt-4 text-center text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {authMode === "sign-in" ? (
+                <>
+                  Don&apos;t have an account?{" "}
+                  <button
+                    onClick={() => openAuth("sign-up")}
+                    className="cursor-pointer font-medium underline-offset-4 hover:underline"
+                    style={{ color: "var(--accent-primary)" }}
+                  >
+                    Sign up
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{" "}
+                  <button
+                    onClick={() => openAuth("sign-in")}
+                    className="cursor-pointer font-medium underline-offset-4 hover:underline"
+                    style={{ color: "var(--accent-primary)" }}
+                  >
+                    Sign in
+                  </button>
+                </>
+              )}
+            </p>
           </div>
         </div>
       )}
