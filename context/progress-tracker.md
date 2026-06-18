@@ -22,10 +22,11 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [6] — Project dialogs: editor home with create CTA, create/rename/delete project dialogs, sidebar project items with dropdown actions, mock data, useProjectDialogs hook
 - feature [7] — Prisma setup: Project + ProjectCollaborator models, Prisma client singleton with Accelerate/direct branching, initial migration
 - feature [8] — API routes: GET/POST `/api/projects`, PATCH/DELETE `/api/projects/[projectId]`, Clerk auth enforcement, ownership checks (401/403), build passes
+- feature [9] — Editor wiring: server-side project fetching, real API mutations, useProjectActions hook, sidebar/dialogs wired to live data, create navigates to workspace, build passes
 
 ## Current Goal
 
-- feature [9] — Canvas integration with React Flow and Liveblocks
+- feature [10] — Canvas integration with React Flow and Liveblocks
 
 ## Next Up
 
@@ -71,6 +72,10 @@ Update this file whenever the current phase, active feature, or implementation s
 - `hooks/` directory for shared React hooks
 - useProjectDialogs hook centralizes dialog, form, and mock data state for editor- Route params in Next.js 16 are `Promise<{ param: string }>` — must be awaited in handler
 - API routes return consistent shapes: `{ projects }`, `{ project }`, `{ error }` with appropriate HTTP status codes
+- Editor page is a server component; interactive parts use small client components (`NewProjectButton`, `EditorLayoutClient`)
+- `useProjectActions` hook replaces mock `useProjectDialogs` — accepts `{ pathname, refresh }` params for navigation and data refresh
+- Project ID (cuid) serves as Liveblocks room ID — navigate to `/editor/{projectId}`
+- `lib/project-types.ts` defines shared `ProjectData`/`SharedProjectData` interfaces used by server data helpers and client components
 ## Session Notes
 
 - Project uses Next.js 16, React 19, Tailwind v4
@@ -135,6 +140,22 @@ Update this file whenever the current phase, active feature, or implementation s
 - Next.js 16 route params are a `Promise<{ projectId: string }>` — must `await params`
 - Route handlers use Web Request/Response APIs, return `NextResponse.json()`
 - Build confirms both routes registered as dynamic (`ƒ`)
+
+### Editor Wiring Notes (session 2026-06-18)
+
+- Editor page (`app/editor/page.tsx`) converted from client to server component — fetches projects via `getProjects()` server-side
+- `lib/project-data.ts`: server-only helper that fetches owned + shared projects using Prisma and Clerk auth
+- `lib/project-types.ts`: shared `ProjectData` and `SharedProjectData` interfaces used across server and client
+- `hooks/use-project-actions.ts`: replaces `useProjectDialogs` mock hook with real API calls (POST/PATCH/DELETE)
+- `app/editor/editor-layout-client.tsx`: client wrapper that manages sidebar state, dialog state, and project mutations
+- `app/editor/layout.tsx`: server component shell that fetches data and renders `EditorLayoutClient`
+- `app/editor/new-project-button.tsx`: small client component for the interactive "New Project" button on the server-rendered home page
+- Create: calls `POST /api/projects`, navigates to `/editor/{projectId}` (project ID used as room ID)
+- Rename: calls `PATCH /api/projects/{id}`, refreshes via `router.refresh()`
+- Delete: calls `DELETE /api/projects/{id}`, redirects to `/editor` if deleting active workspace, otherwise refreshes
+- Sidebar now accepts `currentUserId` prop instead of importing `MOCK_USER_ID`
+- `generateSlug()` exists in both `lib/mock-projects.ts` (for backward compat) and `lib/project-data.ts` (server) and `hooks/use-project-actions.ts` (client)
+- No client-side fetching on initial load — all project data fetched server-side
 
 ### Header Redesign Notes (session 2026-06-17)
 

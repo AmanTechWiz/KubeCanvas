@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { generateSlug } from "@/lib/slug";
 
 export async function GET() {
   const { userId } = await auth();
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
     data: {
       ownerId: userId,
       name,
+      slug: generateSlug(name),
       description: typeof body.description === "string" ? body.description : null,
     },
   });

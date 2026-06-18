@@ -1,25 +1,23 @@
-"use client"
+import { getProjects } from "@/lib/project-data"
+import { NewProjectButton } from "./new-project-button"
 
-import { Plus } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { useEditor } from "@/hooks/use-editor-context"
-
-export default function EditorPage() {
-  const { openCreate } = useEditor()
+export default async function EditorPage() {
+  const { ownedProjects, sharedProjects } = await getProjects()
+  const totalProjects = ownedProjects.length + sharedProjects.length
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center">
       <h1 className="text-xl font-medium text-foreground">
-        Create a project or open an existing one?
+        {totalProjects === 0
+          ? "Create your first project"
+          : "Create a project or open an existing one?"}
       </h1>
       <p className="max-w-md text-sm text-muted-foreground">
-        Start a new architecture workspace, or choose any current running
-        project of yours.
+        {totalProjects === 0
+          ? "Start a new architecture workspace to begin designing."
+          : "Start a new architecture workspace, or choose any current running project of yours."}
       </p>
-      <Button onClick={openCreate} className="cursor-pointer">
-        <Plus className="h-4 w-4" />
-        New Project
-      </Button>
+      <NewProjectButton />
     </div>
   )
 }

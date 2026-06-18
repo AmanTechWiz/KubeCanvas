@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { generateSlug } from "@/lib/slug";
 
 export async function PATCH(
   _request: Request,
@@ -32,7 +33,7 @@ export async function PATCH(
   const updated = await prisma.project.update({
     where: { id: projectId },
     data: {
-      ...(typeof body.name === "string" && { name: body.name.trim() }),
+      ...(typeof body.name === "string" && { name: body.name.trim(), slug: generateSlug(body.name.trim()) }),
       ...(typeof body.description === "string" && { description: body.description }),
     },
   });
