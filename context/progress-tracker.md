@@ -24,10 +24,11 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [8] — API routes: GET/POST `/api/projects`, PATCH/DELETE `/api/projects/[projectId]`, Clerk auth enforcement, ownership checks (401/403), build passes
 - feature [9] — Editor wiring: server-side project fetching, real API mutations, useProjectActions hook, sidebar/dialogs wired to live data, create navigates to workspace, build passes
 - feature [10] — Editor workspace shell: `/editor/[roomId]` server page with Clerk auth checks, project access helper (`lib/project-access.ts`), AccessDenied component, workspace layout with project-name navbar, share/AI sidebar toggles, ProjectSidebar with active-room highlighting, canvas placeholder, AI sidebar placeholder
+- feature [11] — Share dialog: `ShareDialog` component with invite/remove collaborators (owner-only), Clerk-enriched collaborator list with avatars, copy-link with feedback; API route `GET/POST/DELETE /api/projects/[projectId]/collaborators` with ownership enforcement; wired to workspace navbar Share button; `projectSlug` prop added to WorkspaceShell; access revocation polling (`/api/projects/[projectId]/access`) with 5s interval + tab focus + dialog open/close triggers, reloads to AccessDenied on revocation; owner info shown in collaborator list for non-owner collaborators; fixed shared projects bug: `getProjects()` was querying by Clerk userId instead of email — collaborators now correctly see shared projects in sidebar
 
 ## Current Goal
 
-- feature [11] — Canvas integration with React Flow and Liveblocks
+- feature [12] — Canvas integration with React Flow and Liveblocks
 
 ## Next Up
 
@@ -87,6 +88,10 @@ Update this file whenever the current phase, active feature, or implementation s
 - Rename flow navigates to new slug when renaming the currently-open workspace project
 - Auth modal uses click event interception (capture phase) on Clerk container to prevent Clerk's internal path-based navigation from breaking the in-modal hash-based flow
 - Clerk `<SignIn>`/`<SignUp>` use `routing="hash"` + `forceRedirectUrl="/editor"` for in-modal auth without page navigation
+- Access revocation uses polling (5s interval) + event-driven checks (tab focus, dialog open/close) + `window.location.reload()` to trigger server re-check and render AccessDenied
+- Share dialog GET endpoint returns both `collaborators` array and `owner` object (name, email, avatarUrl) enriched via Clerk
+- `useRef` for mutable access-check function reference avoids re-render cycles while allowing cross-scope access
+- `getProjects()` must resolve Clerk userId to email via `clerkClient().users.getUser()` before querying shared projects — `ProjectCollaborator` stores email, not Clerk IDs
 ## Session Notes
 
 - Project uses Next.js 16, React 19, Tailwind v4
@@ -192,7 +197,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - `checkProjectAccess` queries project by ID first, then by slug — supports both URL patterns
 - WorkspaceShell is a client component managing local state: sidebar open, AI sidebar open
 - Workspace navbar: left = sidebar toggle + divider + project name; right = Share button + AI sparkle toggle + UserButton
-- Share button is a placeholder (no sharing logic yet)
+- Share button opens ShareDialog (owner can invite/remove; collaborator sees read-only list)
 - AI sidebar: 320px wide panel slides in from the right, placeholder content for future AI chat
 - Canvas area fills remaining space with centered placeholder text
 - ProjectSidebar updated with optional `currentProjectId` prop — active project gets `bg-accent-dim` background and `text-brand` icon color
@@ -215,3 +220,30 @@ Update this file whenever the current phase, active feature, or implementation s
 - Fix: removed the `@clerk/ui` import, removed `theme: dark` from appearance, used Clerk's native appearance API with `variables` only
 - Tailwind v4 semantic color classes (`bg-background`, `bg-card`, `text-foreground`, `text-muted-foreground`, `text-secondary-foreground`) do not resolve visually in the browser — must use inline `style` props with CSS variables instead
 - Playwright headless browser was essential for diagnosing the issue — `curl` only shows server-rendered HTML, not the client-side DOM state after Clerk JS hydration
+
+### Share Dialog Notes (session 2026-06-18)
+
+- `components/editor/share-dialog.tsx`: Dialog with invite form, collaborator list, copy link
+- Share button in workspace navbar now opens the ShareDialog (`shareOpen` state in WorkspaceShell)
+- `WorkspaceShell` accepts new `projectSlug` prop (passed from server page via `access.project.slug`)
+- API route: `app/api/projects/[projectId]/collaborators/route.ts` — GET (list), POST (invite), DELETE (remove)
+- GET: verifies project access (owner or collaborator), enriches collaborator emails with Clerk `fullName` and `imageUrl` via `clerkClient().users.getUserList({ emailAddress })`
+- POST: owner-only, validates email format, prevents self-invite, uses `upsert` for idempotency
+- DELETE: owner-only, validates collaboratorId belongs to project
+- Collaborator data: stored by email in `ProjectCollaborator` — no local user table
+- Clerk enrichment fallback: if Clerk user not found for email, shows email only (no avatar, no name)
+- ShareDialog renders read-only collaborator list for non-owner collaborators
+- Owner section shown at top of collaborator list for non-owner collaborators (muted background, avatar, name, email)
+- Copy link copies `${origin}/editor/${projectSlug}` with 2s "Copied!" feedback
+
+### Access Revocation Notes (session 2026-06-18)
+
+- Created `GET /api/projects/[projectId]/access` — lightweight endpoint returning `{ hasAccess: boolean }` using `checkProjectAccess()`
+- WorkspaceShell polls every 5s via `setInterval`, checks on `visibilitychange` (tab focus), and checks on ShareDialog open/close
+- `useRef` stores the `checkAccess` function for cross-scope access (setInterval callback, event handlers, dialog callbacks)
+- On `hasAccess: false`, calls `window.location.reload()` — server re-runs `checkProjectAccess()`, returns `null`, renders `<AccessDenied />`
+- Chose reload over redirect to `/editor` so the server component re-evaluates access on the same URL
+- Collaborators API (`GET /api/projects/[projectId]/collaborators`) now enriches owner info via `clerkClient().users.getUser(ownerId)` — returns `owner: { name, email, avatarUrl }` alongside collaborators array
+- Fixed `getProjects()`: was querying `projectCollaborator.findMany({ email: userId })` where userId is a Clerk ID — now looks up email from Clerk via `clerkClient().users.getUser(userId)` before querying shared projects
+- Shared projects appear in the "Shared" tab of ProjectSidebar; collaborators see them read-only (no rename/delete dropdown)
+- Owner sees all their projects in "My Projects" tab with full permissions
