@@ -15,17 +15,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import type { Project } from "@/lib/mock-projects"
-import { MOCK_USER_ID } from "@/lib/mock-projects"
+import type { ProjectData } from "@/lib/project-types"
 
 interface ProjectSidebarProps {
   isOpen: boolean
   onClose: () => void
-  myProjects: Project[]
-  sharedProjects: Project[]
+  myProjects: ProjectData[]
+  sharedProjects: ProjectData[]
+  currentUserId: string
   onCreateProject: () => void
-  onRenameProject: (project: Project) => void
-  onDeleteProject: (project: Project) => void
+  onRenameProject: (project: ProjectData) => void
+  onDeleteProject: (project: ProjectData) => void
 }
 
 function ProjectItem({
@@ -34,7 +34,7 @@ function ProjectItem({
   onRename,
   onDelete,
 }: {
-  project: Project
+  project: ProjectData
   isOwner: boolean
   onRename: () => void
   onDelete: () => void
@@ -85,6 +85,7 @@ export function ProjectSidebar({
   onClose,
   myProjects,
   sharedProjects,
+  currentUserId,
   onCreateProject,
   onRenameProject,
   onDeleteProject,
@@ -129,7 +130,7 @@ export function ProjectSidebar({
                     <ProjectItem
                       key={project.id}
                       project={project}
-                      isOwner={project.ownerId === MOCK_USER_ID}
+                      isOwner={project.ownerId === currentUserId}
                       onRename={() => onRenameProject(project)}
                       onDelete={() => onDeleteProject(project)}
                     />
