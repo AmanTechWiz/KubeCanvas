@@ -18,14 +18,16 @@ model Project {
   id               String          @id @default(cuid())
   ownerId          String
   name             String
+  slug             String          @unique
   description      String?
   status           ProjectStatus   @default(DRAFT)
-  canvasJsonPath   String?         // null values can be allowed here...
+  canvasJsonPath   String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   collaborators    ProjectCollaborator[]
 
   @@index([ownerId])
+  @@index([slug])
   @@index([createdAt])
 }
 

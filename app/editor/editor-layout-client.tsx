@@ -62,6 +62,9 @@ export function EditorLayoutClient({
           sharedProjects={sharedProjects}
           currentUserId={currentUserId}
           onCreateProject={openCreate}
+          onNavigate={(project) => {
+            window.location.href = `/editor/${project.slug}`
+          }}
           onRenameProject={openRename}
           onDeleteProject={openDelete}
         />

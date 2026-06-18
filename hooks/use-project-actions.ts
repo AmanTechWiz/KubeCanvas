@@ -2,17 +2,9 @@
 
 import { useState, useCallback } from "react"
 import type { ProjectData } from "@/lib/project-types"
+import { generateSlug } from "@/lib/slug"
 
 export type DialogType = "create" | "rename" | "delete" | null
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-}
 
 export function useProjectActions({
   pathname,
@@ -68,7 +60,7 @@ export function useProjectActions({
       setFormName("")
       setLoading(false)
       refresh()
-      window.location.href = `/editor/${project.id}`
+      window.location.href = `/editor/${project.slug}`
     } catch {
       setLoading(false)
     }
@@ -99,7 +91,7 @@ export function useProjectActions({
         method: "DELETE",
       })
       if (!res.ok) throw new Error("Failed to delete project")
-      const isCurrentWorkspace = pathname === `/editor/${selectedProject.id}`
+      const isCurrentWorkspace = pathname === `/editor/${selectedProject.slug}`
       closeDialog()
       if (isCurrentWorkspace) {
         window.location.href = "/editor"

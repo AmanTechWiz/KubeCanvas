@@ -2,15 +2,6 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import type { ProjectData, SharedProjectData } from "@/lib/project-types";
 
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 export async function getProjects(): Promise<{
   userId: string;
   ownedProjects: ProjectData[];
@@ -37,7 +28,7 @@ export async function getProjects(): Promise<{
   const ownedProjects: ProjectData[] = owned.map((p) => ({
     id: p.id,
     name: p.name,
-    slug: generateSlug(p.name),
+    slug: p.slug,
     ownerId: p.ownerId,
     createdAt: p.createdAt.toISOString(),
   }));
@@ -45,7 +36,7 @@ export async function getProjects(): Promise<{
   const sharedProjects: SharedProjectData[] = shared.map((sc) => ({
     id: sc.project.id,
     name: sc.project.name,
-    slug: generateSlug(sc.project.name),
+    slug: sc.project.slug,
     ownerId: sc.project.ownerId,
     createdAt: sc.project.createdAt.toISOString(),
     sharedBy: sc.email,

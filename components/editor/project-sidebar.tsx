@@ -24,6 +24,7 @@ interface ProjectSidebarProps {
   sharedProjects: ProjectData[]
   currentUserId: string
   onCreateProject: () => void
+  onNavigate: (project: ProjectData) => void
   onRenameProject: (project: ProjectData) => void
   onDeleteProject: (project: ProjectData) => void
 }
@@ -31,18 +32,22 @@ interface ProjectSidebarProps {
 function ProjectItem({
   project,
   isOwner,
+  onNavigate,
   onRename,
   onDelete,
 }: {
   project: ProjectData
   isOwner: boolean
+  onNavigate: () => void
   onRename: () => void
   onDelete: () => void
 }) {
   return (
-    <div className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted/50 cursor-pointer">
-      <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="flex-1 truncate text-foreground">{project.name}</span>
+    <div className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted/50">
+      <div className="flex flex-1 items-center gap-2 cursor-pointer min-w-0" onClick={onNavigate}>
+        <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="flex-1 truncate text-foreground">{project.name}</span>
+      </div>
       {isOwner && (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -87,6 +92,7 @@ export function ProjectSidebar({
   sharedProjects,
   currentUserId,
   onCreateProject,
+  onNavigate,
   onRenameProject,
   onDeleteProject,
 }: ProjectSidebarProps) {
@@ -131,6 +137,7 @@ export function ProjectSidebar({
                       key={project.id}
                       project={project}
                       isOwner={project.ownerId === currentUserId}
+                      onNavigate={() => onNavigate(project)}
                       onRename={() => onRenameProject(project)}
                       onDelete={() => onDeleteProject(project)}
                     />
@@ -157,6 +164,7 @@ export function ProjectSidebar({
                       key={project.id}
                       project={project}
                       isOwner={false}
+                      onNavigate={() => onNavigate(project)}
                       onRename={() => onRenameProject(project)}
                       onDelete={() => onDeleteProject(project)}
                     />
