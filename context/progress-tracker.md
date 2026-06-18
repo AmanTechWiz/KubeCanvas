@@ -21,10 +21,11 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [5] — Header redesign: Framer Motion spring-animated header that morphs from full-width to floating pill on scroll, centered layout with left/right 50% + translateX, blur aesthetic with backdrop-filter, Features neon button, v0.1 green status pill, logo smooth-scroll to top
 - feature [6] — Project dialogs: editor home with create CTA, create/rename/delete project dialogs, sidebar project items with dropdown actions, mock data, useProjectDialogs hook
 - feature [7] — Prisma setup: Project + ProjectCollaborator models, Prisma client singleton with Accelerate/direct branching, initial migration
+- feature [8] — API routes: GET/POST `/api/projects`, PATCH/DELETE `/api/projects/[projectId]`, Clerk auth enforcement, ownership checks (401/403), build passes
 
 ## Current Goal
 
-- feature [8] — Canvas integration with React Flow and Liveblocks
+- feature [9] — Canvas integration with React Flow and Liveblocks
 
 ## Next Up
 
@@ -68,8 +69,8 @@ Update this file whenever the current phase, active feature, or implementation s
 - NeonButton component for Features link with white neon gradient lines on hover
 - v0.1 status pill with green neon vibe (green-500 text/bg/border, pulsing dot, mono font)
 - `hooks/` directory for shared React hooks
-- useProjectDialogs hook centralizes dialog, form, and mock data state for editor
-
+- useProjectDialogs hook centralizes dialog, form, and mock data state for editor- Route params in Next.js 16 are `Promise<{ param: string }>` — must be awaited in handler
+- API routes return consistent shapes: `{ projects }`, `{ project }`, `{ error }` with appropriate HTTP status codes
 ## Session Notes
 
 - Project uses Next.js 16, React 19, Tailwind v4
@@ -124,6 +125,16 @@ Update this file whenever the current phase, active feature, or implementation s
 - `lib/prisma.ts`: cached singleton using `@prisma/adapter-pg` for direct connections, Accelerate branch for `prisma+postgres://` URLs
 - `prisma.config.ts` loads `.env.local` via `dotenv` config for DATABASE_URL
 - Migration: `prisma/migrations/20260617200317_init/`
+
+### API Routes Notes (session 2026-06-18)
+
+- `app/api/projects/route.ts`: GET lists user's projects (ordered by createdAt desc), POST creates project (defaults name to "Untitled Project")
+- `app/api/projects/[projectId]/route.ts`: PATCH renames project, DELETE removes project
+- Auth: `auth()` from `@clerk/nextjs/server` returns `{ userId }` — null means unauthenticated → 401
+- Ownership: project queried by ID, `ownerId` compared to `userId` — mismatch → 403
+- Next.js 16 route params are a `Promise<{ projectId: string }>` — must `await params`
+- Route handlers use Web Request/Response APIs, return `NextResponse.json()`
+- Build confirms both routes registered as dynamic (`ƒ`)
 
 ### Header Redesign Notes (session 2026-06-17)
 
