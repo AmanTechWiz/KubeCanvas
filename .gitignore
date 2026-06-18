@@ -3,3 +3,4 @@ node_modules/
 .next/
 *.zip
 .agents/
+/app/generated/prisma
