@@ -16,6 +16,7 @@ export function useProjectActions({
   const [dialog, setDialog] = useState<DialogType>(null)
   const [formName, setFormName] = useState("")
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [selectedProject, setSelectedProject] = useState<ProjectData | null>(
     null,
   )
@@ -24,17 +25,20 @@ export function useProjectActions({
 
   const openCreate = useCallback(() => {
     setFormName("")
+    setError(null)
     setDialog("create")
   }, [])
 
   const openRename = useCallback((project: ProjectData) => {
     setSelectedProject(project)
     setFormName(project.name)
+    setError(null)
     setDialog("rename")
   }, [])
 
   const openDelete = useCallback((project: ProjectData) => {
     setSelectedProject(project)
+    setError(null)
     setDialog("delete")
   }, [])
 
@@ -42,6 +46,7 @@ export function useProjectActions({
     setDialog(null)
     setFormName("")
     setSelectedProject(null)
+    setError(null)
     setLoading(false)
   }, [])
 
@@ -61,7 +66,8 @@ export function useProjectActions({
       setLoading(false)
       refresh()
       window.location.href = `/editor/${project.slug}`
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong")
       setLoading(false)
     }
   }, [formName, refresh])
@@ -86,7 +92,8 @@ export function useProjectActions({
       } else {
         refresh()
       }
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong")
       setLoading(false)
     }
   }, [formName, selectedProject, pathname, closeDialog, refresh])
@@ -108,7 +115,8 @@ export function useProjectActions({
       } else {
         refresh()
       }
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong")
       setLoading(false)
     }
   }, [selectedProject, pathname, closeDialog, refresh])
@@ -118,6 +126,7 @@ export function useProjectActions({
     formName,
     formSlug,
     loading,
+    error,
     selectedProject,
     setFormName,
     openCreate,

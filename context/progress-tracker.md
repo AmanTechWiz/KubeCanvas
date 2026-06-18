@@ -92,6 +92,9 @@ Update this file whenever the current phase, active feature, or implementation s
 - Share dialog GET endpoint returns both `collaborators` array and `owner` object (name, email, avatarUrl) enriched via Clerk
 - `useRef` for mutable access-check function reference avoids re-render cycles while allowing cross-scope access
 - `getProjects()` must resolve Clerk userId to email via `clerkClient().users.getUser()` before querying shared projects — `ProjectCollaborator` stores email, not Clerk IDs
+- `useProjectActions` hook exposes `error` state — all three mutation catch blocks set it with `e instanceof Error ? e.message : "Something went wrong"`, cleared on dialog open/close
+- DeleteProjectDialog accepts `error: string | null` prop, renders error message below description; `onOpenChange` guard blocks dismiss while loading
+- ProgressiveBlur component does not accept `children` — it renders a styled overlay, not a wrapper
 ## Session Notes
 
 - Project uses Next.js 16, React 19, Tailwind v4
@@ -247,3 +250,10 @@ Update this file whenever the current phase, active feature, or implementation s
 - Fixed `getProjects()`: was querying `projectCollaborator.findMany({ email: userId })` where userId is a Clerk ID — now looks up email from Clerk via `clerkClient().users.getUser(userId)` before querying shared projects
 - Shared projects appear in the "Shared" tab of ProjectSidebar; collaborators see them read-only (no rename/delete dropdown)
 - Owner sees all their projects in "My Projects" tab with full permissions
+
+### Code Quality Fixes (session 2026-06-18)
+
+- `useProjectActions` hook: added `error` state to all three catch blocks (create/rename/delete), previously silent bare catches suppressed errors with no user feedback
+- `DeleteProjectDialog`: added `error` prop, renders inline error message; `onOpenChange` guard prevents Escape/backdrop dismiss while `loading` is true
+- `ProgressiveBlur` component: removed unused `children` prop from interface and dead `React` import — component is an overlay, not a wrapper
+- `share-dialog.tsx`: removed unused `Input` import, suppressed `set-state-in-effect` lint warning (async fetch sets state after await — safe but lint can't verify)

@@ -11,7 +11,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 
 interface Collaborator {
   id: string
@@ -66,6 +65,7 @@ export function ShareDialog({
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch, state set after await
       fetchCollaborators()
       setEmail("")
       setCopied(false)

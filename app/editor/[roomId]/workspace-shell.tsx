@@ -96,6 +96,7 @@ export function WorkspaceShell({
     formName,
     formSlug,
     loading,
+    error,
     selectedProject,
     setFormName,
     openCreate,
@@ -253,6 +254,7 @@ export function WorkspaceShell({
           }}
           projectName={selectedProject?.name ?? ""}
           loading={loading}
+          error={error}
           onConfirm={deleteProject}
         />
 
