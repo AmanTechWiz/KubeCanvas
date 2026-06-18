@@ -23,6 +23,7 @@ interface ProjectSidebarProps {
   myProjects: ProjectData[]
   sharedProjects: ProjectData[]
   currentUserId: string
+  currentProjectId?: string
   onCreateProject: () => void
   onNavigate: (project: ProjectData) => void
   onRenameProject: (project: ProjectData) => void
@@ -32,21 +33,23 @@ interface ProjectSidebarProps {
 function ProjectItem({
   project,
   isOwner,
+  isActive,
   onNavigate,
   onRename,
   onDelete,
 }: {
   project: ProjectData
   isOwner: boolean
+  isActive: boolean
   onNavigate: () => void
   onRename: () => void
   onDelete: () => void
 }) {
   return (
-    <div className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted/50">
+    <div className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isActive ? "bg-accent-dim" : "hover:bg-muted/50"}`}>
       <div className="flex flex-1 items-center gap-2 cursor-pointer min-w-0" onClick={onNavigate}>
-        <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="flex-1 truncate text-foreground">{project.name}</span>
+        <FolderOpen className={`h-4 w-4 shrink-0 ${isActive ? "text-brand" : "text-muted-foreground"}`} />
+        <span className={`flex-1 truncate ${isActive ? "text-foreground font-medium" : "text-foreground"}`}>{project.name}</span>
       </div>
       {isOwner && (
         <DropdownMenu>
@@ -91,6 +94,7 @@ export function ProjectSidebar({
   myProjects,
   sharedProjects,
   currentUserId,
+  currentProjectId,
   onCreateProject,
   onNavigate,
   onRenameProject,
@@ -137,6 +141,7 @@ export function ProjectSidebar({
                       key={project.id}
                       project={project}
                       isOwner={project.ownerId === currentUserId}
+                      isActive={project.id === currentProjectId}
                       onNavigate={() => onNavigate(project)}
                       onRename={() => onRenameProject(project)}
                       onDelete={() => onDeleteProject(project)}
@@ -164,6 +169,7 @@ export function ProjectSidebar({
                       key={project.id}
                       project={project}
                       isOwner={false}
+                      isActive={project.id === currentProjectId}
                       onNavigate={() => onNavigate(project)}
                       onRename={() => onRenameProject(project)}
                       onDelete={() => onDeleteProject(project)}

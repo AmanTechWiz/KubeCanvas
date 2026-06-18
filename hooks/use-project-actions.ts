@@ -76,12 +76,20 @@ export function useProjectActions({
         body: JSON.stringify({ name: formName.trim() }),
       })
       if (!res.ok) throw new Error("Failed to rename project")
+      const { project: updated } = await res.json()
+      const isCurrentWorkspace =
+        pathname === `/editor/${selectedProject.slug}` ||
+        pathname === `/editor/${selectedProject.id}`
       closeDialog()
-      refresh()
+      if (isCurrentWorkspace) {
+        window.location.href = `/editor/${updated.slug}`
+      } else {
+        refresh()
+      }
     } catch {
       setLoading(false)
     }
-  }, [formName, selectedProject, closeDialog, refresh])
+  }, [formName, selectedProject, pathname, closeDialog, refresh])
 
   const deleteProject = useCallback(async () => {
     if (!selectedProject) return
@@ -91,7 +99,9 @@ export function useProjectActions({
         method: "DELETE",
       })
       if (!res.ok) throw new Error("Failed to delete project")
-      const isCurrentWorkspace = pathname === `/editor/${selectedProject.slug}`
+      const isCurrentWorkspace =
+        pathname === `/editor/${selectedProject.slug}` ||
+        pathname === `/editor/${selectedProject.id}`
       closeDialog()
       if (isCurrentWorkspace) {
         window.location.href = "/editor"

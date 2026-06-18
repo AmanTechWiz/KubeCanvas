@@ -23,10 +23,11 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [7] — Prisma setup: Project + ProjectCollaborator models, Prisma client singleton with Accelerate/direct branching, initial migration
 - feature [8] — API routes: GET/POST `/api/projects`, PATCH/DELETE `/api/projects/[projectId]`, Clerk auth enforcement, ownership checks (401/403), build passes
 - feature [9] — Editor wiring: server-side project fetching, real API mutations, useProjectActions hook, sidebar/dialogs wired to live data, create navigates to workspace, build passes
+- feature [10] — Editor workspace shell: `/editor/[roomId]` server page with Clerk auth checks, project access helper (`lib/project-access.ts`), AccessDenied component, workspace layout with project-name navbar, share/AI sidebar toggles, ProjectSidebar with active-room highlighting, canvas placeholder, AI sidebar placeholder
 
 ## Current Goal
 
-- feature [10] — Canvas integration with React Flow and Liveblocks
+- feature [11] — Canvas integration with React Flow and Liveblocks
 
 ## Next Up
 
@@ -76,6 +77,16 @@ Update this file whenever the current phase, active feature, or implementation s
 - `useProjectActions` hook replaces mock `useProjectDialogs` — accepts `{ pathname, refresh }` params for navigation and data refresh
 - Project ID (cuid) serves as Liveblocks room ID — navigate to `/editor/{projectId}`
 - `lib/project-types.ts` defines shared `ProjectData`/`SharedProjectData` interfaces used by server data helpers and client components
+- `lib/project-access.ts` provides `getCurrentIdentity()` and `checkProjectAccess()` helpers for server-side auth and project access checks
+- Access denied page uses styled Link (not Button `asChild`) — shadcn Button is base-ui based, no `asChild` prop
+- ProjectSidebar accepts optional `currentProjectId` prop to highlight the active room
+- Workspace shell is a client component (`workspace-shell.tsx`) with sidebar, AI sidebar toggle, share button, and canvas placeholder
+- `/editor/[roomId]` page is a server component that checks auth → redirects unauthenticated, shows AccessDenied for unauthorized, renders WorkspaceShell for authorized users
+- Project slug or ID can be used as the `roomId` param — `checkProjectAccess` tries both
+- `EditorLayoutClient` detects workspace pages via `pathname.startsWith` check and passes children through without chrome — prevents duplicate navbar/sidebar
+- Rename flow navigates to new slug when renaming the currently-open workspace project
+- Auth modal uses click event interception (capture phase) on Clerk container to prevent Clerk's internal path-based navigation from breaking the in-modal hash-based flow
+- Clerk `<SignIn>`/`<SignUp>` use `routing="hash"` + `forceRedirectUrl="/editor"` for in-modal auth without page navigation
 ## Session Notes
 
 - Project uses Next.js 16, React 19, Tailwind v4
@@ -171,6 +182,32 @@ Update this file whenever the current phase, active feature, or implementation s
 - v0.1 pill: green-500 text, green background glow, pulsing dot, mono font
 - Logo click smooth-scrolls to top instead of page reload
 - Hero section pushed up with `pt-8 pb-24` for better vertical centering
+
+### Editor Workspace Shell Notes (session 2026-06-18)
+
+- `/editor/[roomId]` is a server component that enforces auth + project access before rendering
+- Unauthenticated users are redirected to `/sign-in` via `redirect()`
+- Unauthorized or non-existent projects render `<AccessDenied />` (lock icon, message, link back to `/editor`)
+- `lib/project-access.ts`: `getCurrentIdentity()` returns `{ userId, email }` or null; `checkProjectAccess(idOrSlug)` returns `{ userId, email, project, isOwner }` or null
+- `checkProjectAccess` queries project by ID first, then by slug — supports both URL patterns
+- WorkspaceShell is a client component managing local state: sidebar open, AI sidebar open
+- Workspace navbar: left = sidebar toggle + divider + project name; right = Share button + AI sparkle toggle + UserButton
+- Share button is a placeholder (no sharing logic yet)
+- AI sidebar: 320px wide panel slides in from the right, placeholder content for future AI chat
+- Canvas area fills remaining space with centered placeholder text
+- ProjectSidebar updated with optional `currentProjectId` prop — active project gets `bg-accent-dim` background and `text-brand` icon color
+- `EditorLayoutClient` detects workspace pages via pathname regex and skips rendering its own navbar/sidebar/dialogs — prevents duplicate chrome
+- WorkspaceShell now uses `useProjectActions` hook + all three project dialogs (create/rename/delete) — sidebar features work identically to `/editor` home
+- Server page fetches all user projects via `getProjects()` and passes to WorkspaceShell for sidebar display
+- `useProjectActions.deleteProject` checks both slug and ID in pathname to detect current workspace for redirect
+- `useProjectActions.renameProject` navigates to `/editor/${updated.slug}` when renaming the current workspace project (prevents stale-slug AccessDenied)
+
+### Auth Modal Fixes (session 2026-06-18)
+
+- Modal now conditionally renders `<SignIn>` or `<SignUp>` based on `authMode` state (previously only rendered `<SignIn>`)
+- Both Clerk components use `routing="hash"` + `forceRedirectUrl="/editor"` for in-modal auth
+- Toggle links below Clerk component: "Don't have an account? Sign up" / "Already have an account? Sign in"
+- Click interceptor on Clerk container div catches internal Clerk links (`/sign-up`, `/sign-in`) that use path routing despite `routing="hash"`, prevents page navigation, and swaps authMode state instead
 
 ### Auth Debugging Notes (session 2026-06-16)
 
