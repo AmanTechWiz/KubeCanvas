@@ -17,6 +17,7 @@ import { DeleteProjectDialog } from "@/components/editor/delete-project-dialog"
 import { useProjectActions } from "@/hooks/use-project-actions"
 import { EditorContext } from "@/hooks/use-editor-context"
 import { ShareDialog } from "@/components/editor/share-dialog"
+import { CanvasEditor } from "./canvas-editor"
 import type { ProjectData, SharedProjectData } from "@/lib/project-types"
 
 interface WorkspaceShellProps {
@@ -191,16 +192,9 @@ export function WorkspaceShell({
             onDeleteProject={openDelete}
           />
 
-          {/* Canvas area — placeholder */}
-          <div className="flex flex-1 items-center justify-center bg-base">
-            <div className="text-center space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Canvas coming soon
-              </p>
-              <p className="text-xs text-faint">
-                React Flow + Liveblocks integration goes here
-              </p>
-            </div>
+          {/* Canvas area */}
+          <div className="flex flex-1 overflow-hidden bg-base">
+            <CanvasEditor roomId={projectId} />
           </div>
 
           {/* AI sidebar placeholder */}

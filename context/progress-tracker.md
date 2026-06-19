@@ -25,14 +25,16 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [9] — Editor wiring: server-side project fetching, real API mutations, useProjectActions hook, sidebar/dialogs wired to live data, create navigates to workspace, build passes
 - feature [10] — Editor workspace shell: `/editor/[roomId]` server page with Clerk auth checks, project access helper (`lib/project-access.ts`), AccessDenied component, workspace layout with project-name navbar, share/AI sidebar toggles, ProjectSidebar with active-room highlighting, canvas placeholder, AI sidebar placeholder
 - feature [11] — Share dialog: `ShareDialog` component with invite/remove collaborators (owner-only), Clerk-enriched collaborator list with avatars, copy-link with feedback; API route `GET/POST/DELETE /api/projects/[projectId]/collaborators` with ownership enforcement; wired to workspace navbar Share button; `projectSlug` prop added to WorkspaceShell; access revocation polling (`/api/projects/[projectId]/access`) with 5s interval + tab focus + dialog open/close triggers, reloads to AccessDenied on revocation; owner info shown in collaborator list for non-owner collaborators; fixed shared projects bug: `getProjects()` was querying by Clerk userId instead of email — collaborators now correctly see shared projects in sidebar
+- feature [11.1] — Liveblocks setup: `liveblocks.config.ts` with Presence (cursor, isThinking) and UserMeta (name, avatar, color); cached Node client in `lib/liveblocks.ts` with deterministic `getUserColor()` palette helper; `POST /api/liveblocks-auth` route with Clerk auth + project access verification + room auto-creation + ID token issuance with user metadata; build passes
+- feature [12] — Canvas integration: `types/canvas.ts` with `CanvasNodeData` (label, color, shape), `CanvasNode`, `CanvasEdge` types; `liveblocks.config.ts` Storage typed with `LiveblocksFlow<CanvasNode, CanvasEdge>`; `canvas-editor.tsx` client wrapper with `LiveblocksProvider` (auth endpoint), `RoomProvider` (room ID, initial presence), `ClientSideSuspense`, error boundary; React Flow wired via `useLiveblocksFlow({ suspense: true })` with synced nodes/edges/change handlers; loose connection mode, fitView, MiniMap, dot-pattern background; workspace-shell placeholder replaced; build passes
 
 ## Current Goal
 
-- feature [12] — Canvas integration with React Flow and Liveblocks
+- feature [13] — Next feature TBD
 
 ## Next Up
 
-- Canvas integration with React Flow and Liveblocks
+- Next feature TBD
 
 ## Open Questions
 
@@ -58,6 +60,16 @@ Update this file whenever the current phase, active feature, or implementation s
 - Landing page follows xAI design language: single dark canvas, white outline pills, mono uppercase eyebrows, weight-400 display type with negative tracking, no shadows (hairline borders only)
 - Auth is handled inline on the landing page via modal overlay — no separate sign-in/sign-up routes
 - Clerk components use `routing="hash"` for in-modal authentication without page navigation
+- Liveblocks uses access token authentication (`prepareSession` + `session.allow` + `session.authorize`) — NOT `identifyUser()` which requires the external Permissions API
+- Liveblocks room ID = project ID (cuid) — private rooms with `defaultAccesses: []`
+- Cursor colors are deterministically derived from user ID using a fixed 16-color palette hash
+- Liveblocks Node client is cached as a singleton in `lib/liveblocks.ts` (same pattern as Prisma)
+- Auth route `/api/liveblocks-auth` verifies Clerk auth + project access, creates/reuses room, then issues an access token via `prepareSession` + `session.allow(roomId, ["*:write"])` + `session.authorize()`
+- Canvas uses `useLiveblocksFlow({ suspense: true })` from `@liveblocks/react-flow` to sync React Flow state via Liveblocks Storage
+- `LiveblocksFlow<CanvasNode, CanvasEdge>` is the Storage type for the React Flow diagram (key: `"flow"`)
+- Canvas wrapper (`canvas-editor.tsx`) owns the full Liveblocks room lifecycle — providers are not hoisted to layout
+- Error boundary wraps the entire Liveblocks provider tree to catch connection/auth failures gracefully
+- Loose connection mode (`ConnectionMode.Loose`) allows connecting any node to any node
 - Landing page hero uses `@paper-design/shaders-react` Dithering component (white-on-black, 20% opacity) inside a rounded card
 - "together" uses Nanum Pen Script font with auto-playing PointerHighlight animation (cycles corners every 7.5s)
 - Feature cards wrapped in BorderGlow component with directional glow on hover (cyan, purple, green themes)
