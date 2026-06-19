@@ -24,14 +24,17 @@ Update this file whenever the current phase, active feature, or implementation s
 - feature [8] — API routes: GET/POST `/api/projects`, PATCH/DELETE `/api/projects/[projectId]`, Clerk auth enforcement, ownership checks (401/403), build passes
 - feature [9] — Editor wiring: server-side project fetching, real API mutations, useProjectActions hook, sidebar/dialogs wired to live data, create navigates to workspace, build passes
 - feature [10] — Editor workspace shell: `/editor/[roomId]` server page with Clerk auth checks, project access helper (`lib/project-access.ts`), AccessDenied component, workspace layout with project-name navbar, share/AI sidebar toggles, ProjectSidebar with active-room highlighting, canvas placeholder, AI sidebar placeholder
+- feature [11] — Share dialog: `ShareDialog` component with invite/remove collaborators (owner-only), Clerk-enriched collaborator list with avatars, copy-link with feedback; API route `GET/POST/DELETE /api/projects/[projectId]/collaborators` with ownership enforcement; wired to workspace navbar Share button; `projectSlug` prop added to WorkspaceShell; access revocation polling (`/api/projects/[projectId]/access`) with 5s interval + tab focus + dialog open/close triggers, reloads to AccessDenied on revocation; owner info shown in collaborator list for non-owner collaborators; fixed shared projects bug: `getProjects()` was querying by Clerk userId instead of email — collaborators now correctly see shared projects in sidebar
+- feature [11.1] — Liveblocks setup: `liveblocks.config.ts` with Presence (cursor, isThinking) and UserMeta (name, avatar, color); cached Node client in `lib/liveblocks.ts` with deterministic `getUserColor()` palette helper; `POST /api/liveblocks-auth` route with Clerk auth + project access verification + room auto-creation + ID token issuance with user metadata; build passes
+- feature [12] — Canvas integration: `types/canvas.ts` with `CanvasNodeData` (label, color, shape), `CanvasNode`, `CanvasEdge` types; `liveblocks.config.ts` Storage typed with `LiveblocksFlow<CanvasNode, CanvasEdge>`; `canvas-editor.tsx` client wrapper with `LiveblocksProvider` (auth endpoint), `RoomProvider` (room ID, initial presence), `ClientSideSuspense`, error boundary; React Flow wired via `useLiveblocksFlow({ suspense: true })` with synced nodes/edges/change handlers; loose connection mode, fitView, MiniMap, dot-pattern background; workspace-shell placeholder replaced; build passes
 
 ## Current Goal
 
-- feature [11] — Canvas integration with React Flow and Liveblocks
+- feature [13] — Next feature TBD
 
 ## Next Up
 
-- Canvas integration with React Flow and Liveblocks
+- Next feature TBD
 
 ## Open Questions
 
@@ -57,6 +60,16 @@ Update this file whenever the current phase, active feature, or implementation s
 - Landing page follows xAI design language: single dark canvas, white outline pills, mono uppercase eyebrows, weight-400 display type with negative tracking, no shadows (hairline borders only)
 - Auth is handled inline on the landing page via modal overlay — no separate sign-in/sign-up routes
 - Clerk components use `routing="hash"` for in-modal authentication without page navigation
+- Liveblocks uses access token authentication (`prepareSession` + `session.allow` + `session.authorize`) — NOT `identifyUser()` which requires the external Permissions API
+- Liveblocks room ID = project ID (cuid) — private rooms with `defaultAccesses: []`
+- Cursor colors are deterministically derived from user ID using a fixed 16-color palette hash
+- Liveblocks Node client is cached as a singleton in `lib/liveblocks.ts` (same pattern as Prisma)
+- Auth route `/api/liveblocks-auth` verifies Clerk auth + project access, creates/reuses room, then issues an access token via `prepareSession` + `session.allow(roomId, ["*:write"])` + `session.authorize()`
+- Canvas uses `useLiveblocksFlow({ suspense: true })` from `@liveblocks/react-flow` to sync React Flow state via Liveblocks Storage
+- `LiveblocksFlow<CanvasNode, CanvasEdge>` is the Storage type for the React Flow diagram (key: `"flow"`)
+- Canvas wrapper (`canvas-editor.tsx`) owns the full Liveblocks room lifecycle — providers are not hoisted to layout
+- Error boundary wraps the entire Liveblocks provider tree to catch connection/auth failures gracefully
+- Loose connection mode (`ConnectionMode.Loose`) allows connecting any node to any node
 - Landing page hero uses `@paper-design/shaders-react` Dithering component (white-on-black, 20% opacity) inside a rounded card
 - "together" uses Nanum Pen Script font with auto-playing PointerHighlight animation (cycles corners every 7.5s)
 - Feature cards wrapped in BorderGlow component with directional glow on hover (cyan, purple, green themes)
@@ -87,6 +100,13 @@ Update this file whenever the current phase, active feature, or implementation s
 - Rename flow navigates to new slug when renaming the currently-open workspace project
 - Auth modal uses click event interception (capture phase) on Clerk container to prevent Clerk's internal path-based navigation from breaking the in-modal hash-based flow
 - Clerk `<SignIn>`/`<SignUp>` use `routing="hash"` + `forceRedirectUrl="/editor"` for in-modal auth without page navigation
+- Access revocation uses polling (5s interval) + event-driven checks (tab focus, dialog open/close) + `window.location.reload()` to trigger server re-check and render AccessDenied
+- Share dialog GET endpoint returns both `collaborators` array and `owner` object (name, email, avatarUrl) enriched via Clerk
+- `useRef` for mutable access-check function reference avoids re-render cycles while allowing cross-scope access
+- `getProjects()` must resolve Clerk userId to email via `clerkClient().users.getUser()` before querying shared projects — `ProjectCollaborator` stores email, not Clerk IDs
+- `useProjectActions` hook exposes `error` state — all three mutation catch blocks set it with `e instanceof Error ? e.message : "Something went wrong"`, cleared on dialog open/close
+- DeleteProjectDialog accepts `error: string | null` prop, renders error message below description; `onOpenChange` guard blocks dismiss while loading
+- ProgressiveBlur component does not accept `children` — it renders a styled overlay, not a wrapper
 ## Session Notes
 
 - Project uses Next.js 16, React 19, Tailwind v4
@@ -192,7 +212,7 @@ Update this file whenever the current phase, active feature, or implementation s
 - `checkProjectAccess` queries project by ID first, then by slug — supports both URL patterns
 - WorkspaceShell is a client component managing local state: sidebar open, AI sidebar open
 - Workspace navbar: left = sidebar toggle + divider + project name; right = Share button + AI sparkle toggle + UserButton
-- Share button is a placeholder (no sharing logic yet)
+- Share button opens ShareDialog (owner can invite/remove; collaborator sees read-only list)
 - AI sidebar: 320px wide panel slides in from the right, placeholder content for future AI chat
 - Canvas area fills remaining space with centered placeholder text
 - ProjectSidebar updated with optional `currentProjectId` prop — active project gets `bg-accent-dim` background and `text-brand` icon color
@@ -215,3 +235,37 @@ Update this file whenever the current phase, active feature, or implementation s
 - Fix: removed the `@clerk/ui` import, removed `theme: dark` from appearance, used Clerk's native appearance API with `variables` only
 - Tailwind v4 semantic color classes (`bg-background`, `bg-card`, `text-foreground`, `text-muted-foreground`, `text-secondary-foreground`) do not resolve visually in the browser — must use inline `style` props with CSS variables instead
 - Playwright headless browser was essential for diagnosing the issue — `curl` only shows server-rendered HTML, not the client-side DOM state after Clerk JS hydration
+
+### Share Dialog Notes (session 2026-06-18)
+
+- `components/editor/share-dialog.tsx`: Dialog with invite form, collaborator list, copy link
+- Share button in workspace navbar now opens the ShareDialog (`shareOpen` state in WorkspaceShell)
+- `WorkspaceShell` accepts new `projectSlug` prop (passed from server page via `access.project.slug`)
+- API route: `app/api/projects/[projectId]/collaborators/route.ts` — GET (list), POST (invite), DELETE (remove)
+- GET: verifies project access (owner or collaborator), enriches collaborator emails with Clerk `fullName` and `imageUrl` via `clerkClient().users.getUserList({ emailAddress })`
+- POST: owner-only, validates email format, prevents self-invite, uses `upsert` for idempotency
+- DELETE: owner-only, validates collaboratorId belongs to project
+- Collaborator data: stored by email in `ProjectCollaborator` — no local user table
+- Clerk enrichment fallback: if Clerk user not found for email, shows email only (no avatar, no name)
+- ShareDialog renders read-only collaborator list for non-owner collaborators
+- Owner section shown at top of collaborator list for non-owner collaborators (muted background, avatar, name, email)
+- Copy link copies `${origin}/editor/${projectSlug}` with 2s "Copied!" feedback
+
+### Access Revocation Notes (session 2026-06-18)
+
+- Created `GET /api/projects/[projectId]/access` — lightweight endpoint returning `{ hasAccess: boolean }` using `checkProjectAccess()`
+- WorkspaceShell polls every 5s via `setInterval`, checks on `visibilitychange` (tab focus), and checks on ShareDialog open/close
+- `useRef` stores the `checkAccess` function for cross-scope access (setInterval callback, event handlers, dialog callbacks)
+- On `hasAccess: false`, calls `window.location.reload()` — server re-runs `checkProjectAccess()`, returns `null`, renders `<AccessDenied />`
+- Chose reload over redirect to `/editor` so the server component re-evaluates access on the same URL
+- Collaborators API (`GET /api/projects/[projectId]/collaborators`) now enriches owner info via `clerkClient().users.getUser(ownerId)` — returns `owner: { name, email, avatarUrl }` alongside collaborators array
+- Fixed `getProjects()`: was querying `projectCollaborator.findMany({ email: userId })` where userId is a Clerk ID — now looks up email from Clerk via `clerkClient().users.getUser(userId)` before querying shared projects
+- Shared projects appear in the "Shared" tab of ProjectSidebar; collaborators see them read-only (no rename/delete dropdown)
+- Owner sees all their projects in "My Projects" tab with full permissions
+
+### Code Quality Fixes (session 2026-06-18)
+
+- `useProjectActions` hook: added `error` state to all three catch blocks (create/rename/delete), previously silent bare catches suppressed errors with no user feedback
+- `DeleteProjectDialog`: added `error` prop, renders inline error message; `onOpenChange` guard prevents Escape/backdrop dismiss while `loading` is true
+- `ProgressiveBlur` component: removed unused `children` prop from interface and dead `React` import — component is an overlay, not a wrapper
+- `share-dialog.tsx`: removed unused `Input` import, suppressed `set-state-in-effect` lint warning (async fetch sets state after await — safe but lint can't verify)

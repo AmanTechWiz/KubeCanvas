@@ -1,7 +1,5 @@
 "use client"
 
-import React from "react"
-
 import { cn } from "@/lib/utils"
 
 export interface ProgressiveBlurProps {
@@ -9,7 +7,6 @@ export interface ProgressiveBlurProps {
   height?: string
   position?: "top" | "bottom" | "both"
   blurLevels?: number[]
-  children?: React.ReactNode
 }
 
 export function ProgressiveBlur({

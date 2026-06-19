@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import type { ProjectData, SharedProjectData } from "@/lib/project-types";
 
@@ -13,16 +13,23 @@ export async function getProjects(): Promise<{
     throw new Error("Unauthorized");
   }
 
+  // Look up the user's email from Clerk — userId is a Clerk ID, not an email
+  const user = await (await clerkClient()).users.getUser(userId);
+  const email = user.emailAddresses[0]?.emailAddress?.toLowerCase() ?? "";
+
   const [owned, shared] = await Promise.all([
     prisma.project.findMany({
       where: { ownerId: userId },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.projectCollaborator.findMany({
-      where: { email: userId },
-      include: { project: true },
-      orderBy: { createdAt: "desc" },
-    }),
+    // Query by actual email, not Clerk userId
+    email
+      ? prisma.projectCollaborator.findMany({
+          where: { email },
+          include: { project: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : [],
   ]);
 
   const ownedProjects: ProjectData[] = owned.map((p) => ({

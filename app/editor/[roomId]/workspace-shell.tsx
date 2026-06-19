@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
   PanelLeftOpen,
@@ -16,10 +16,13 @@ import { RenameProjectDialog } from "@/components/editor/rename-project-dialog"
 import { DeleteProjectDialog } from "@/components/editor/delete-project-dialog"
 import { useProjectActions } from "@/hooks/use-project-actions"
 import { EditorContext } from "@/hooks/use-editor-context"
+import { ShareDialog } from "@/components/editor/share-dialog"
+import { CanvasEditor } from "./canvas-editor"
 import type { ProjectData, SharedProjectData } from "@/lib/project-types"
 
 interface WorkspaceShellProps {
   projectId: string
+  projectSlug: string
   projectName: string
   isOwner: boolean
   currentUserId: string
@@ -29,6 +32,7 @@ interface WorkspaceShellProps {
 
 export function WorkspaceShell({
   projectId,
+  projectSlug,
   projectName,
   isOwner,
   currentUserId,
@@ -38,12 +42,62 @@ export function WorkspaceShell({
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const accessCheckRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const checkAccessRef = useRef<(() => Promise<void>) | null>(null)
+
+  // Poll access every 5s + on tab focus — reload if revoked
+  useEffect(() => {
+    let cancelled = false
+
+    const checkAccess = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/access`)
+        if (res.ok) {
+          const data = await res.json()
+          if (!data.hasAccess && !cancelled) {
+            window.location.reload()
+          }
+        }
+      } catch {
+        // Network error — skip this check cycle
+      }
+    }
+
+    checkAccessRef.current = checkAccess
+
+    // Poll every 5 seconds
+    accessCheckRef.current = setInterval(checkAccess, 5_000)
+
+    // Also check when the tab regains focus
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkAccess()
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange)
+
+    return () => {
+      cancelled = true
+      if (accessCheckRef.current) clearInterval(accessCheckRef.current)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [projectId])
+
+  // Immediate check when share dialog closes — owner may have just revoked access
+  const handleShareOpenChange = useCallback((open: boolean) => {
+    setShareOpen(open)
+    if (!open && checkAccessRef.current) {
+      checkAccessRef.current()
+    }
+  }, [])
 
   const {
     dialog,
     formName,
     formSlug,
     loading,
+    error,
     selectedProject,
     setFormName,
     openCreate,
@@ -94,6 +148,10 @@ export function WorkspaceShell({
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => {
+                setShareOpen(true)
+                if (checkAccessRef.current) checkAccessRef.current()
+              }}
               className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
             >
               <Share2 className="h-4 w-4" />
@@ -134,16 +192,9 @@ export function WorkspaceShell({
             onDeleteProject={openDelete}
           />
 
-          {/* Canvas area — placeholder */}
-          <div className="flex flex-1 items-center justify-center bg-base">
-            <div className="text-center space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Canvas coming soon
-              </p>
-              <p className="text-xs text-faint">
-                React Flow + Liveblocks integration goes here
-              </p>
-            </div>
+          {/* Canvas area */}
+          <div className="flex flex-1 overflow-hidden bg-base">
+            <CanvasEditor roomId={projectId} />
           </div>
 
           {/* AI sidebar placeholder */}
@@ -197,7 +248,17 @@ export function WorkspaceShell({
           }}
           projectName={selectedProject?.name ?? ""}
           loading={loading}
+          error={error}
           onConfirm={deleteProject}
+        />
+
+        <ShareDialog
+          open={shareOpen}
+          onOpenChange={handleShareOpenChange}
+          projectId={projectId}
+          projectSlug={projectSlug}
+          projectName={projectName}
+          isOwner={isOwner}
         />
       </div>
     </EditorContext.Provider>

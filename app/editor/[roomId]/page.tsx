@@ -32,6 +32,7 @@ export default async function RoomPage({ params }: RoomPageProps) {
   return (
     <WorkspaceShell
       projectId={access.project.id}
+      projectSlug={access.project.slug}
       projectName={access.project.name}
       isOwner={access.isOwner}
       currentUserId={identity.userId}
