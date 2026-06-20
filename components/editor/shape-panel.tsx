@@ -15,6 +15,7 @@ import {
   type ShapeDragPayload,
 } from "@/lib/canvas-shapes";
 import type { NodeShape } from "@/types/canvas";
+import { ClearConfirmButton } from "@/components/editor/clear-confirm";
 
 // ── Context for adding nodes from drop ─────────────────────────────────
 export interface AddNodePayload {
@@ -28,6 +29,7 @@ export interface AddNodePayload {
 
 interface ShapePanelContextValue {
   addNode: (payload: AddNodePayload) => void;
+  onClear?: () => void;
 }
 
 export const ShapePanelContext = createContext<ShapePanelContextValue | null>(
@@ -91,6 +93,9 @@ function ShapeButton({ shape, label }: { shape: ShapeDragPayload; label: string 
 
 // ── Shape panel component ──────────────────────────────────────────────
 export function ShapePanel() {
+  const ctx = useContext(ShapePanelContext);
+  const onClear = ctx?.onClear;
+
   return (
     <div className="absolute bottom-4 left-1/2 z-50 -translate-x-1/2 pointer-events-none">
       <div className="flex items-center gap-1 rounded-2xl border border-white/[0.08] bg-black/60 px-2 py-1.5 backdrop-blur-xl backdrop-saturate-150 shadow-[0_2px_24px_rgba(0,0,0,0.4),inset_0_0.5px_0_rgba(255,255,255,0.06)]">
@@ -101,6 +106,9 @@ export function ShapePanel() {
             label={s.label}
           />
         ))}
+        {/* Divider */}
+        <div className="mx-1 h-5 w-px bg-white/[0.12]" />
+        {onClear && <ClearConfirmButton onConfirm={onClear} />}
       </div>
     </div>
   );
