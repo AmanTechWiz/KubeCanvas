@@ -110,3 +110,13 @@
         @apply font-sans;
     }
 }
+
+/* Hide Liveblocks branding badge injected into document.body */
+#liveblocks-badge {
+    display: none !important;
+}
+
+/* Hide React Flow attribution watermark */
+.react-flow__attribution {
+    display: none !important;
+}

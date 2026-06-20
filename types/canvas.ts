@@ -33,8 +33,15 @@ export const DEFAULT_NODE_COLOR = NODE_COLORS[0];
 export interface CanvasNodeData {
   label: string;
   color: string;
+  textColor: string;
   shape: NodeShape;
   [key: string]: unknown;
+}
+
+/** Look up the matching text color for a given background color. Falls back to `#EDEDED`. */
+export function textColorForBg(bg: string): string {
+  const match = NODE_COLORS.find((c) => c.bg.toLowerCase() === bg.toLowerCase());
+  return match ? match.text : "#EDEDED";
 }
 
 // ── Node type ──────────────────────────────────────────────────────────

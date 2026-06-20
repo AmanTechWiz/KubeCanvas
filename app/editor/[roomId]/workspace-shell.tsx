@@ -18,6 +18,7 @@ import { useProjectActions } from "@/hooks/use-project-actions"
 import { EditorContext } from "@/hooks/use-editor-context"
 import { ShareDialog } from "@/components/editor/share-dialog"
 import { ShapePanel } from "@/components/editor/shape-panel"
+import { ShapeDragPreview } from "@/components/editor/shape-drag-preview"
 import { CanvasEditor } from "./canvas-editor"
 import type { ProjectData, SharedProjectData } from "@/lib/project-types"
 
@@ -200,6 +201,7 @@ export function WorkspaceShell({
           <div className="relative flex flex-1 overflow-hidden bg-base">
             <CanvasEditor roomId={projectId} />
             <ShapePanel />
+            <ShapeDragPreview />
           </div>
 
           {/* AI sidebar placeholder */}

@@ -63,6 +63,15 @@ function ShapeButton({ shape, label }: { shape: ShapeDragPayload; label: string 
       e.dataTransfer.setData("application/x-kubecanvas-shape", serialized)
       e.dataTransfer.setData("text/plain", serialized)
       e.dataTransfer.effectAllowed = "copy"
+
+      // Suppress the browser's default drag ghost — our custom
+      // ShapeDragPreview component renders the preview instead.
+      const ghost = document.createElement("div")
+      ghost.style.cssText = "width:1px;height:1px;position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;"
+      document.body.appendChild(ghost)
+      e.dataTransfer.setDragImage(ghost, 0, 0)
+      // Clean up after a tick — the browser has captured the image
+      setTimeout(() => ghost.remove(), 0)
     } catch (err) {
       // Defensive: some browsers restrict dataTransfer access in certain contexts
     }
