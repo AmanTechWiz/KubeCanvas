@@ -18,6 +18,7 @@ import {
   useRedo,
   useCanUndo,
   useCanRedo,
+  useUpdateMyPresence,
 } from "@liveblocks/react"
 
 import { useLiveblocksFlow } from "@liveblocks/react-flow"
@@ -36,9 +37,12 @@ import { CanvasNodeComponentMemo } from "@/components/editor/canvas-node"
 import { CanvasEdgeComponent } from "@/components/editor/canvas-edge"
 import {
   ShapePanelContext,
+  ShapePanel,
   type AddNodePayload,
 } from "@/components/editor/shape-panel"
 import { CanvasControls } from "@/components/editor/canvas-controls"
+import { CollaboratorAvatars } from "@/components/editor/collaborator-avatars"
+import { LiveCursors } from "@/components/editor/live-cursors"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
 import { parseShapeDrag, SHAPES } from "@/lib/canvas-shapes"
@@ -130,12 +134,83 @@ function screenToFlowPosition(clientX: number, clientY: number): { x: number; y:
 function FlowCanvas({
   pendingTemplate,
   onTemplateImported,
+  currentUserId,
+  aiSidebarOpen,
 }: {
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
+  currentUserId: string
+  aiSidebarOpen?: boolean
 }) {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect } =
     useLiveblocksFlow({ suspense: true })
+
+  // ── Cursor presence ───────────────────────────────────────────────
+  const updateMyPresence = useUpdateMyPresence()
+  const cursorThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
+
+  // Track viewport changes from React Flow pan/zoom
+  const handleMove = useCallback(
+    (_: any, vp: { x: number; y: number; zoom: number }) => {
+      setViewport(vp)
+    },
+    [],
+  )
+
+  // Broadcast cursor position via a document-level listener so it
+  // keeps working even during node drag (React Flow uses pointer
+  // capture internally which can swallow events on the container).
+  // We listen to both mousemove and pointermove — pointermove is the
+  // only event that fires during setPointerCapture().
+  useEffect(() => {
+    const rfEl = document.querySelector(".react-flow") as HTMLElement | null
+    if (!rfEl) return
+
+    const onCursorMove = (e: MouseEvent | PointerEvent) => {
+      if (cursorThrottleRef.current) return
+      cursorThrottleRef.current = setTimeout(() => {
+        cursorThrottleRef.current = null
+      }, 50)
+
+      const rect = rfEl.getBoundingClientRect()
+
+      // Only broadcast when the pointer is within the canvas area
+      if (
+        e.clientX < rect.left ||
+        e.clientX > rect.right ||
+        e.clientY < rect.top ||
+        e.clientY > rect.bottom
+      ) {
+        return
+      }
+
+      const screenX = e.clientX - rect.left
+      const screenY = e.clientY - rect.top
+
+      // Convert screen → flow coordinates using the viewport transform
+      const flowX = (screenX - viewport.x) / viewport.zoom
+      const flowY = (screenY - viewport.y) / viewport.zoom
+
+      updateMyPresence({ cursor: { x: flowX, y: flowY } })
+    }
+
+    const onMouseLeave = () => {
+      updateMyPresence({ cursor: null })
+    }
+
+    // Attach to document so cursor presence updates even when React
+    // Flow has captured the pointer during a node drag operation.
+    document.addEventListener("mousemove", onCursorMove)
+    document.addEventListener("pointermove", onCursorMove)
+    document.addEventListener("mouseleave", onMouseLeave)
+
+    return () => {
+      document.removeEventListener("mousemove", onCursorMove)
+      document.removeEventListener("pointermove", onCursorMove)
+      document.removeEventListener("mouseleave", onMouseLeave)
+    }
+  }, [updateMyPresence, viewport])
 
   // Filter out malformed nodes that lack a valid position object
   const safeNodes = useMemo(
@@ -413,22 +488,20 @@ function FlowCanvas({
   }, [addNodeMutation])
 
   return (
-    <ShapePanelContext.Provider value={{ addNode: handleAddNode }}>
+    <ShapePanelContext.Provider value={{ addNode: handleAddNode, onClear: () => clearNodesMutation() }}>
+      {/* Collaborator avatars — top-right, hidden when AI sidebar is open */}
+      <div className={`absolute top-16 right-4 z-[61] ${aiSidebarOpen ? "pointer-events-none opacity-0" : ""}`}>
+        <CollaboratorAvatars />
+      </div>
+
+      {/* Shape panel + clear — bottom-center */}
+      <ShapePanel />
+
       <div
         className="h-full w-full"
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {/* Floating clear button */}
-        <div className="absolute top-16 right-4 z-[61]">
-          <button
-            onClick={() => clearNodesMutation()}
-            className="rounded-lg border border-white/[0.08] bg-black/60 px-3 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-xl hover:bg-white/[0.06] hover:text-foreground transition-colors shadow-[0_2px_16px_rgba(0,0,0,0.3)]"
-            title="Clear all nodes from canvas"
-          >
-            Clear All
-          </button>
-        </div>
         <ReactFlow
           nodes={safeNodes}
           edges={edges}
@@ -447,7 +520,9 @@ function FlowCanvas({
           minZoom={0.1}
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
+          onMove={handleMove}
         >
+          <LiveCursors currentUserId={currentUserId} viewport={viewport} />
           <ReactFlowControls />
           <TemplateImporter
             pendingTemplate={pendingTemplate}
@@ -644,12 +719,16 @@ export interface CanvasEditorProps {
   roomId: string
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
+  currentUserId: string
+  aiSidebarOpen?: boolean
 }
 
 export function CanvasEditor({
   roomId,
   pendingTemplate,
   onTemplateImported,
+  currentUserId,
+  aiSidebarOpen,
 }: CanvasEditorProps) {
   return (
     <CanvasError className="h-full w-full">
@@ -670,6 +749,8 @@ export function CanvasEditor({
             <FlowCanvas
               pendingTemplate={pendingTemplate}
               onTemplateImported={onTemplateImported}
+              currentUserId={currentUserId}
+              aiSidebarOpen={aiSidebarOpen}
             />
           </ClientSideSuspense>
         </RoomProvider>

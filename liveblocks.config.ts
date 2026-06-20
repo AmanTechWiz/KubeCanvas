@@ -2,6 +2,7 @@ import type { LiveblocksFlow } from "@liveblocks/react-flow";
 import type { CanvasNode, CanvasEdge } from "@/types/canvas";
 
 // Define Liveblocks types for your application
+// Lemme attach docs for future ref..
 // https://liveblocks.io/docs/api-reference/liveblocks-react#Typing-your-data
 declare global {
   interface Liveblocks {
