@@ -44,6 +44,7 @@ import { CanvasControls } from "@/components/editor/canvas-controls"
 import { CollaboratorAvatars } from "@/components/editor/collaborator-avatars"
 import { LiveCursors } from "@/components/editor/live-cursors"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import { useAutosave, type SaveStatus } from "@/hooks/use-autosave"
 import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
 import { parseShapeDrag, SHAPES } from "@/lib/canvas-shapes"
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
@@ -132,15 +133,19 @@ function screenToFlowPosition(clientX: number, clientY: number): { x: number; y:
 // Drop handlers live on a wrapper div OUTSIDE <ReactFlow>.
 // Coordinate conversion reads the viewport transform from the DOM.
 function FlowCanvas({
+  projectId,
   pendingTemplate,
   onTemplateImported,
   currentUserId,
   aiSidebarOpen,
+  onSaveApi,
 }: {
+  projectId: string
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
   currentUserId: string
   aiSidebarOpen?: boolean
+  onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
 }) {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect } =
     useLiveblocksFlow({ suspense: true })
@@ -378,6 +383,25 @@ function FlowCanvas({
     [addNodeMutation],
   )
 
+  // ── Autosave ──────────────────────────────────────────────────────
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle")
+  const { manualSave, status } = useAutosave({
+    nodes: nodes ?? [],
+    edges: edges ?? [],
+    projectId,
+    onStatusChange: setSaveStatus,
+  })
+
+  // Expose save API to parent
+  const onSaveApiRef = useRef(onSaveApi)
+  onSaveApiRef.current = onSaveApi
+  useEffect(() => {
+    onSaveApiRef.current?.({ manualSave, status })
+  }, [manualSave, status])
+
+  // ── Canvas state loader ──────────────────────────────────────────
+  const [canvasLoaded, setCanvasLoaded] = useState(false)
+
   // ── External drag-drop handlers on wrapper div ────────────────────
   // ReactFlow v12 uses pointer events internally and does not consume
   // native drag/drop events, so they bubble up to this wrapper div.
@@ -489,6 +513,14 @@ function FlowCanvas({
 
   return (
     <ShapePanelContext.Provider value={{ addNode: handleAddNode, onClear: () => clearNodesMutation() }}>
+      {/* Canvas state loader — fetches saved state if room is empty */}
+      {!canvasLoaded && (
+        <CanvasLoader projectId={projectId} onLoaded={() => setCanvasLoaded(true)} />
+      )}
+
+      {/* Save status indicator — top-left below navbar */}
+      <SaveStatusIndicator status={saveStatus} />
+
       {/* Collaborator avatars — top-right, hidden when AI sidebar is open */}
       <div className={`absolute top-16 right-4 z-[61] ${aiSidebarOpen ? "pointer-events-none opacity-0" : ""}`}>
         <CollaboratorAvatars />
@@ -646,6 +678,135 @@ function TemplateImporter({
   return null
 }
 
+// ── Canvas state loader (must live inside <ReactFlow> for useMutation) ──
+function CanvasLoader({
+  projectId,
+  onLoaded,
+}: {
+  projectId: string
+  onLoaded?: () => void
+}) {
+  const loadedRef = useRef(false)
+
+  const loadMutation = useMutation(
+    ({ storage }, canvasJson: { nodes: any[]; edges: any[] }) => {
+      try {
+        const flow = storage.get("flow")
+        if (!flow) return
+
+        const nodesMap = flow.get("nodes")
+        const edgesMap = flow.get("edges")
+
+        // Only load if the room is empty — skip if active collaboration exists
+        let nodeCount = 0
+        nodesMap.forEach(() => nodeCount++)
+        if (nodeCount > 0) return
+
+        // Load nodes
+        for (const node of canvasJson.nodes) {
+          nodesMap.set(
+            node.id,
+            new LiveObject({
+              id: node.id,
+              type: node.type || "canvasNode",
+              position: node.position,
+              width: node.width,
+              height: node.height,
+              data: new LiveObject({
+                label: node.data?.label ?? "",
+                color: node.data?.color ?? "#6457f9",
+                textColor: node.data?.textColor ?? "#8b82ff",
+                shape: node.data?.shape ?? "rectangle",
+              }),
+              selected: false,
+              dragging: false,
+            }) as never,
+          )
+        }
+
+        // Load edges
+        for (const edge of canvasJson.edges) {
+          edgesMap.set(
+            edge.id,
+            new LiveObject({
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              sourceHandle: edge.sourceHandle ?? null,
+              targetHandle: edge.targetHandle ?? null,
+            }) as never,
+          )
+        }
+      } catch (err) {
+        console.error("[CanvasLoader] load error:", err)
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
+
+    fetch(`/api/projects/${projectId}/canvas`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.canvasJson) {
+          loadMutation(data.canvasJson)
+        }
+      })
+      .catch(() => {
+        // Silently ignore load errors
+      })
+      .finally(() => {
+        onLoaded?.()
+      })
+  }, [projectId, loadMutation, onLoaded])
+
+  return null
+}
+
+// ── Save status indicator ──────────────────────────────────────────────
+function SaveStatusIndicator({ status }: { status: SaveStatus }) {
+  if (status === "idle") return null
+
+  return (
+    <div className="absolute top-16 left-4 z-[61] pointer-events-none">
+      <div
+        className={`
+          flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium
+          border backdrop-blur-xl transition-all duration-300
+          ${status === "saving"
+            ? "border-white/[0.08] bg-white/[0.04] text-muted-foreground"
+            : status === "saved"
+            ? "border-[var(--state-success)]/20 bg-[var(--state-success)]/10 text-[var(--state-success)]"
+            : "border-[var(--state-error)]/20 bg-[var(--state-error)]/10 text-[var(--state-error)]"
+          }
+        `}
+      >
+        {status === "saving" && (
+          <>
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground animate-pulse" />
+            Saving…
+          </>
+        )}
+        {status === "saved" && (
+          <>
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--state-success)]" />
+            Saved
+          </>
+        )}
+        {status === "error" && (
+          <>
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--state-error)]" />
+            Save failed
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Loading state ─────────────────────────────────────────────────────
 function CanvasLoading() {
   return (
@@ -717,18 +878,22 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 // ── Exported wrapper ───────────────────────────────────────────────────
 export interface CanvasEditorProps {
   roomId: string
+  projectId: string
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
   currentUserId: string
   aiSidebarOpen?: boolean
+  onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
 }
 
 export function CanvasEditor({
   roomId,
+  projectId,
   pendingTemplate,
   onTemplateImported,
   currentUserId,
   aiSidebarOpen,
+  onSaveApi,
 }: CanvasEditorProps) {
   return (
     <CanvasError className="h-full w-full">
@@ -747,10 +912,12 @@ export function CanvasEditor({
         >
           <ClientSideSuspense fallback={<CanvasLoading />}>
             <FlowCanvas
+              projectId={projectId}
               pendingTemplate={pendingTemplate}
               onTemplateImported={onTemplateImported}
               currentUserId={currentUserId}
               aiSidebarOpen={aiSidebarOpen}
+              onSaveApi={onSaveApi}
             />
           </ClientSideSuspense>
         </RoomProvider>

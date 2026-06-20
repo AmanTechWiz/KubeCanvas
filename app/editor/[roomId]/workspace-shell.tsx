@@ -8,6 +8,7 @@ import {
   Share2,
   Sparkles,
   LayoutTemplate,
+  Save,
 } from "lucide-react"
 import { UserButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
@@ -23,6 +24,7 @@ import { AiSidebar } from "@/components/editor/ai-sidebar"
 import { CanvasEditor } from "./canvas-editor"
 import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal"
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
+import type { SaveStatus } from "@/hooks/use-autosave"
 import type { ProjectData, SharedProjectData } from "@/lib/project-types"
 
 interface WorkspaceShellProps {
@@ -50,6 +52,7 @@ export function WorkspaceShell({
   const [shareOpen, setShareOpen] = useState(false)
   const [starterTemplatesOpen, setStarterTemplatesOpen] = useState(false)
   const [pendingTemplate, setPendingTemplate] = useState<CanvasTemplate | null>(null)
+  const [saveApi, setSaveApi] = useState<{ manualSave: () => void; status: SaveStatus } | null>(null)
   const accessCheckRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const checkAccessRef = useRef<(() => Promise<void>) | null>(null)
 
@@ -149,8 +152,27 @@ export function WorkspaceShell({
               </span>
             </div>
 
-            {/* Right: templates + share + user */}
+            {/* Right: save + templates + share + user */}
             <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => saveApi?.manualSave()}
+                disabled={!saveApi || saveApi.status === "saving"}
+                className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <Save className="h-4 w-4" />
+                <span className="hidden sm:inline">
+                  {saveApi?.status === "saving"
+                    ? "Saving…"
+                    : saveApi?.status === "saved"
+                    ? "Saved"
+                    : saveApi?.status === "error"
+                    ? "Error"
+                    : "Save"}
+                </span>
+              </Button>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -218,10 +240,12 @@ export function WorkspaceShell({
           <div className="relative flex flex-1 overflow-hidden bg-base">
             <CanvasEditor
               roomId={projectId}
+              projectId={projectId}
               pendingTemplate={pendingTemplate}
               onTemplateImported={() => setPendingTemplate(null)}
               currentUserId={currentUserId}
               aiSidebarOpen={aiSidebarOpen}
+              onSaveApi={setSaveApi}
             />
             <ShapeDragPreview />
           </div>
