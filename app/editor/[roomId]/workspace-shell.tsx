@@ -17,6 +17,7 @@ import { DeleteProjectDialog } from "@/components/editor/delete-project-dialog"
 import { useProjectActions } from "@/hooks/use-project-actions"
 import { EditorContext } from "@/hooks/use-editor-context"
 import { ShareDialog } from "@/components/editor/share-dialog"
+import { ShapePanel } from "@/components/editor/shape-panel"
 import { CanvasEditor } from "./canvas-editor"
 import type { ProjectData, SharedProjectData } from "@/lib/project-types"
 
@@ -114,68 +115,71 @@ export function WorkspaceShell({
 
   return (
     <EditorContext.Provider value={{ openCreate }}>
-      <div className="flex h-screen flex-col overflow-hidden">
-        {/* Workspace navbar */}
-        <nav className="relative z-[60] flex h-12 items-center border-b border-border bg-card px-3">
-          {/* Left: sidebar toggle + project name */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-              className="cursor-pointer"
-            >
-              {sidebarOpen ? (
-                <PanelLeftClose className="h-5 w-5" />
-              ) : (
-                <PanelLeftOpen className="h-5 w-5" />
-              )}
-            </Button>
+      <div className="relative h-screen overflow-hidden">
+        {/* Workspace navbar — floating glass pill over canvas */}
+        <div className="absolute top-2 inset-x-2 z-[60]">
+          <div className="relative flex h-10 w-full items-center rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 backdrop-blur-2xl backdrop-saturate-150 shadow-[inset_0_0.5px_0_rgba(255,255,255,0.06)]">
+            {/* Left: sidebar toggle */}
+            <div className="flex items-center shrink-0">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+                className="cursor-pointer"
+              >
+                {sidebarOpen ? (
+                  <PanelLeftClose className="h-5 w-5" />
+                ) : (
+                  <PanelLeftOpen className="h-5 w-5" />
+                )}
+              </Button>
+            </div>
 
-            <div className="h-4 w-px bg-border" />
+            {/* Center: project name */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <span className="text-sm font-medium text-foreground truncate max-w-[300px]">
+                {projectName}
+              </span>
+            </div>
 
-            <span className="text-sm font-medium text-foreground truncate max-w-[200px]">
-              {projectName}
-            </span>
-          </div>
+            {/* Right: share + user */}
+            <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShareOpen(true)
+                  if (checkAccessRef.current) checkAccessRef.current()
+                }}
+                className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <Share2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Share</span>
+              </Button>
 
-          {/* Center spacer */}
-          <div className="flex-1" />
-
-          {/* Right: share + AI toggle + user */}
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setShareOpen(true)
-                if (checkAccessRef.current) checkAccessRef.current()
-              }}
-              className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              <Share2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Share</span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setAiSidebarOpen(!aiSidebarOpen)}
-              aria-label={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
-              className="cursor-pointer text-accent-ai hover:text-accent-ai-text"
-            >
-              <Sparkles className="h-5 w-5" />
-            </Button>
-
-            <div className="ml-1">
-              <UserButton />
+              <div className="ml-1 flex items-center justify-center h-10">
+                <UserButton />
+              </div>
             </div>
           </div>
-        </nav>
+        </div>
+
+        {/* Floating AI toggle — above minimap, bottom-right */}
+        <div className="absolute bottom-44 right-4 z-[60]">
+          <Button
+            size="icon-lg"
+            variant="ghost"
+            onClick={() => setAiSidebarOpen(!aiSidebarOpen)}
+            aria-label={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
+            className={`rounded-full cursor-pointer border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_16px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.06)] transition-colors ${aiSidebarOpen ? "text-accent-ai bg-accent-ai/10" : "text-muted-foreground hover:text-accent-ai"}`}
+          >
+            <Sparkles className="h-5 w-5" />
+          </Button>
+        </div>
 
         {/* Body: sidebar + canvas + AI sidebar */}
-        <div className="relative flex flex-1 overflow-hidden">
+        <div className="relative flex h-full overflow-hidden">
           {/* Project sidebar */}
           <ProjectSidebar
             isOpen={sidebarOpen}
@@ -193,8 +197,9 @@ export function WorkspaceShell({
           />
 
           {/* Canvas area */}
-          <div className="flex flex-1 overflow-hidden bg-base">
+          <div className="relative flex flex-1 overflow-hidden bg-base">
             <CanvasEditor roomId={projectId} />
+            <ShapePanel />
           </div>
 
           {/* AI sidebar placeholder */}
