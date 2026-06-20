@@ -7,6 +7,7 @@ import {
   PanelLeftClose,
   Share2,
   Sparkles,
+  LayoutTemplate,
 } from "lucide-react"
 import { UserButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,8 @@ import { ShareDialog } from "@/components/editor/share-dialog"
 import { ShapePanel } from "@/components/editor/shape-panel"
 import { ShapeDragPreview } from "@/components/editor/shape-drag-preview"
 import { CanvasEditor } from "./canvas-editor"
+import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal"
+import type { CanvasTemplate } from "@/components/editor/starter-templates"
 import type { ProjectData, SharedProjectData } from "@/lib/project-types"
 
 interface WorkspaceShellProps {
@@ -45,6 +48,8 @@ export function WorkspaceShell({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [starterTemplatesOpen, setStarterTemplatesOpen] = useState(false)
+  const [pendingTemplate, setPendingTemplate] = useState<CanvasTemplate | null>(null)
   const accessCheckRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const checkAccessRef = useRef<(() => Promise<void>) | null>(null)
 
@@ -69,7 +74,7 @@ export function WorkspaceShell({
     checkAccessRef.current = checkAccess
 
     // Poll every 5 seconds
-    accessCheckRef.current = setInterval(checkAccess, 5_000)
+    accessCheckRef.current = setInterval(checkAccess, 30_000)
 
     // Also check when the tab regains focus
     const onVisibilityChange = () => {
@@ -144,8 +149,18 @@ export function WorkspaceShell({
               </span>
             </div>
 
-            {/* Right: share + user */}
+            {/* Right: templates + share + user */}
             <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStarterTemplatesOpen(true)}
+                className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <LayoutTemplate className="h-4 w-4" />
+                <span className="hidden sm:inline">Templates</span>
+              </Button>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -199,7 +214,11 @@ export function WorkspaceShell({
 
           {/* Canvas area */}
           <div className="relative flex flex-1 overflow-hidden bg-base">
-            <CanvasEditor roomId={projectId} />
+            <CanvasEditor
+              roomId={projectId}
+              pendingTemplate={pendingTemplate}
+              onTemplateImported={() => setPendingTemplate(null)}
+            />
             <ShapePanel />
             <ShapeDragPreview />
           </div>
@@ -266,6 +285,12 @@ export function WorkspaceShell({
           projectSlug={projectSlug}
           projectName={projectName}
           isOwner={isOwner}
+        />
+
+        <StarterTemplatesModal
+          open={starterTemplatesOpen}
+          onOpenChange={setStarterTemplatesOpen}
+          onImport={(template) => setPendingTemplate(template)}
         />
       </div>
     </EditorContext.Provider>
