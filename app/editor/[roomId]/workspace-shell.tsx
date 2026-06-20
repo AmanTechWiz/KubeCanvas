@@ -18,8 +18,8 @@ import { DeleteProjectDialog } from "@/components/editor/delete-project-dialog"
 import { useProjectActions } from "@/hooks/use-project-actions"
 import { EditorContext } from "@/hooks/use-editor-context"
 import { ShareDialog } from "@/components/editor/share-dialog"
-import { ShapePanel } from "@/components/editor/shape-panel"
 import { ShapeDragPreview } from "@/components/editor/shape-drag-preview"
+import { AiSidebar } from "@/components/editor/ai-sidebar"
 import { CanvasEditor } from "./canvas-editor"
 import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal"
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
@@ -181,18 +181,20 @@ export function WorkspaceShell({
           </div>
         </div>
 
-        {/* Floating AI toggle — above minimap, bottom-right */}
-        <div className="absolute bottom-44 right-4 z-[60]">
-          <Button
-            size="icon-lg"
-            variant="ghost"
-            onClick={() => setAiSidebarOpen(!aiSidebarOpen)}
-            aria-label={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
-            className={`rounded-full cursor-pointer border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_16px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.06)] transition-colors ${aiSidebarOpen ? "text-accent-ai bg-accent-ai/10" : "text-muted-foreground hover:text-accent-ai"}`}
-          >
-            <Sparkles className="h-5 w-5" />
-          </Button>
-        </div>
+        {/* Floating AI toggle — bottom-right */}
+        {!aiSidebarOpen && (
+          <div className="absolute bottom-4 right-4 z-[60]">
+            <Button
+              size="icon-lg"
+              variant="ghost"
+              onClick={() => setAiSidebarOpen(true)}
+              aria-label="Open AI sidebar"
+              className="rounded-full cursor-pointer border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_16px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.06)] text-muted-foreground hover:text-accent-ai"
+            >
+              <Sparkles className="h-5 w-5" />
+            </Button>
+          </div>
+        )}
 
         {/* Body: sidebar + canvas + AI sidebar */}
         <div className="relative flex h-full overflow-hidden">
@@ -218,28 +220,17 @@ export function WorkspaceShell({
               roomId={projectId}
               pendingTemplate={pendingTemplate}
               onTemplateImported={() => setPendingTemplate(null)}
+              currentUserId={currentUserId}
+              aiSidebarOpen={aiSidebarOpen}
             />
-            <ShapePanel />
             <ShapeDragPreview />
           </div>
 
-          {/* AI sidebar placeholder */}
-          {aiSidebarOpen && (
-            <div className="flex w-80 flex-col border-l border-border bg-card">
-              <div className="flex h-10 items-center border-b border-border px-3">
-                <Sparkles className="h-4 w-4 text-accent-ai" />
-                <span className="ml-2 text-sm font-medium text-foreground">
-                  AI Assistant
-                </span>
-              </div>
-
-              <div className="flex flex-1 items-center justify-center p-4">
-                <p className="text-center text-sm text-muted-foreground">
-                  AI chat integration coming soon
-                </p>
-              </div>
-            </div>
-          )}
+          {/* AI sidebar */}
+          <AiSidebar
+            isOpen={aiSidebarOpen}
+            onClose={() => setAiSidebarOpen(false)}
+          />
         </div>
 
         {/* Project dialogs */}
