@@ -19,4 +19,8 @@ Read the following files in order before implementing or making any architectura
 
 Update `context/progress-tracker.md` after each meaningful implementation change and make sure to keep updating current phase too.
 
+always use bun for testing builds for passes.
+
+must - write commit messages like how human would write (short , context , on point) in any branch.
+
 If implementation changes the architecture, scope, or standards documented in the context files, update the relevant file before continuing.
