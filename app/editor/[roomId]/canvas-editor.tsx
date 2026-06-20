@@ -8,6 +8,7 @@ import {
   useState,
   type DragEvent,
 } from "react"
+
 import {
   LiveblocksProvider,
   RoomProvider,
@@ -18,7 +19,9 @@ import {
   useCanUndo,
   useCanRedo,
 } from "@liveblocks/react"
+
 import { useLiveblocksFlow } from "@liveblocks/react-flow"
+
 import {
   ReactFlow,
   Background,
@@ -39,6 +42,7 @@ import { CanvasControls } from "@/components/editor/canvas-controls"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
 import { parseShapeDrag, SHAPES } from "@/lib/canvas-shapes"
+import type { CanvasTemplate } from "@/components/editor/starter-templates"
 
 // ── React Flow defaults ────────────────────────────────────────────────
 const defaultViewport = { x: 0, y: 0, zoom: 1 }
@@ -123,7 +127,13 @@ function screenToFlowPosition(clientX: number, clientY: number): { x: number; y:
 //
 // Drop handlers live on a wrapper div OUTSIDE <ReactFlow>.
 // Coordinate conversion reads the viewport transform from the DOM.
-function FlowCanvas() {
+function FlowCanvas({
+  pendingTemplate,
+  onTemplateImported,
+}: {
+  pendingTemplate?: CanvasTemplate | null
+  onTemplateImported?: () => void
+}) {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect } =
     useLiveblocksFlow({ suspense: true })
 
@@ -439,6 +449,10 @@ function FlowCanvas() {
           proOptions={{ hideAttribution: true }}
         >
           <ReactFlowControls />
+          <TemplateImporter
+            pendingTemplate={pendingTemplate}
+            onTemplateImported={onTemplateImported}
+          />
           <Background
             variant={BackgroundVariant.Dots}
             gap={20}
@@ -470,6 +484,91 @@ function ReactFlowControls() {
       redo={redo}
     />
   )
+}
+
+// ── Template importer (must live inside <ReactFlow> for useReactFlow) ──
+function TemplateImporter({
+  pendingTemplate,
+  onTemplateImported,
+}: {
+  pendingTemplate?: CanvasTemplate | null
+  onTemplateImported?: () => void
+}) {
+  const reactFlowInstance = useReactFlow()
+
+  const importMutation = useMutation(
+    ({ storage }, template: CanvasTemplate) => {
+      try {
+        const flow = storage.get("flow")
+        if (!flow) return
+
+        // Clear all existing nodes
+        const nodesMap = flow.get("nodes")
+        const nodeKeys: string[] = []
+        nodesMap.forEach((_n: any, k: string) => nodeKeys.push(k))
+        for (const k of nodeKeys) nodesMap.delete(k)
+
+        // Clear all existing edges
+        const edgesMap = flow.get("edges")
+        const edgeKeys: string[] = []
+        edgesMap.forEach((_e: any, k: string) => edgeKeys.push(k))
+        for (const k of edgeKeys) edgesMap.delete(k)
+
+        // Add template nodes as LiveObjects
+        for (const node of template.nodes) {
+          nodesMap.set(
+            node.id,
+            new LiveObject({
+              id: node.id,
+              type: "canvasNode",
+              position: { x: node.x, y: node.y },
+              width: node.width,
+              height: node.height,
+              data: new LiveObject({
+                label: node.label,
+                color: node.color,
+                textColor: node.textColor,
+                shape: node.shape,
+              }),
+              selected: false,
+              dragging: false,
+            }) as never,
+          )
+        }
+
+        // Add template edges as LiveObjects
+        // (type, markerEnd, style are handled by defaultEdgeOptions in ReactFlow)
+        for (const edge of template.edges) {
+          edgesMap.set(
+            edge.id,
+            new LiveObject({
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              sourceHandle: edge.sourceHandle ?? null,
+              targetHandle: edge.targetHandle ?? null,
+            }) as never,
+          )
+        }
+      } catch (err) {
+        console.error("[TemplateImporter] import error:", err)
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!pendingTemplate) return
+    importMutation(pendingTemplate)
+    onTemplateImported?.()
+    // Allow CRDT propagation + React re-render before fitting viewport
+    const timer = setTimeout(() => {
+      reactFlowInstance.fitView({ duration: 300, padding: 0.2 })
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [pendingTemplate, importMutation, onTemplateImported, reactFlowInstance])
+
+  return null
 }
 
 // ── Loading state ─────────────────────────────────────────────────────
@@ -543,9 +642,15 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 // ── Exported wrapper ───────────────────────────────────────────────────
 export interface CanvasEditorProps {
   roomId: string
+  pendingTemplate?: CanvasTemplate | null
+  onTemplateImported?: () => void
 }
 
-export function CanvasEditor({ roomId }: CanvasEditorProps) {
+export function CanvasEditor({
+  roomId,
+  pendingTemplate,
+  onTemplateImported,
+}: CanvasEditorProps) {
   return (
     <CanvasError className="h-full w-full">
       <LiveblocksProvider
@@ -562,7 +667,10 @@ export function CanvasEditor({ roomId }: CanvasEditorProps) {
           }}
         >
           <ClientSideSuspense fallback={<CanvasLoading />}>
-            <FlowCanvas />
+            <FlowCanvas
+              pendingTemplate={pendingTemplate}
+              onTemplateImported={onTemplateImported}
+            />
           </ClientSideSuspense>
         </RoomProvider>
       </LiveblocksProvider>
