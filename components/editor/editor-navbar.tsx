@@ -11,8 +11,8 @@ interface EditorNavbarProps {
 
 export function EditorNavbar({ sidebarOpen, onToggleSidebar }: EditorNavbarProps) {
   return (
-    <nav className="relative z-[60] flex h-12 items-center border-b border-border bg-card px-3">
-      <div className="flex items-center">
+    <div className="relative flex h-10 w-full items-center rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 backdrop-blur-2xl backdrop-saturate-150 shadow-[inset_0_0.5px_0_rgba(255,255,255,0.06)]">
+      <div className="flex items-center shrink-0">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -30,9 +30,9 @@ export function EditorNavbar({ sidebarOpen, onToggleSidebar }: EditorNavbarProps
 
       <div className="flex-1" />
 
-      <div className="flex items-center">
+      <div className="ml-auto flex items-center justify-center h-10">
         <UserButton />
       </div>
-    </nav>
+    </div>
   )
 }

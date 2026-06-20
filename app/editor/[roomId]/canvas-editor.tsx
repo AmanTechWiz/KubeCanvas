@@ -13,23 +13,31 @@ import {
   RoomProvider,
   ClientSideSuspense,
   useMutation,
+  useUndo,
+  useRedo,
+  useCanUndo,
+  useCanRedo,
 } from "@liveblocks/react"
 import { useLiveblocksFlow } from "@liveblocks/react-flow"
 import {
   ReactFlow,
-  MiniMap,
   Background,
   BackgroundVariant,
   ConnectionMode,
+  MarkerType,
+  useReactFlow,
 } from "@xyflow/react"
 import { LiveObject, LiveMap } from "@liveblocks/client"
 import "@xyflow/react/dist/style.css"
 import { CanvasNodeComponentMemo } from "@/components/editor/canvas-node"
+import { CanvasEdgeComponent } from "@/components/editor/canvas-edge"
 import {
   ShapePanelContext,
   type AddNodePayload,
 } from "@/components/editor/shape-panel"
-import { DEFAULT_NODE_COLOR } from "@/types/canvas"
+import { CanvasControls } from "@/components/editor/canvas-controls"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
 import { parseShapeDrag, SHAPES } from "@/lib/canvas-shapes"
 
 // ── React Flow defaults ────────────────────────────────────────────────
@@ -38,6 +46,27 @@ const defaultViewport = { x: 0, y: 0, zoom: 1 }
 // ── Custom node types ──────────────────────────────────────────────────
 const nodeTypes = {
   canvasNode: CanvasNodeComponentMemo,
+}
+
+// ── Custom edge types ──────────────────────────────────────────────────
+const edgeTypes = {
+  canvasEdge: CanvasEdgeComponent,
+}
+
+// ── Default edge options ───────────────────────────────────────────────
+const defaultEdgeOptions = {
+  type: "canvasEdge",
+  markerEnd: {
+    type: MarkerType.ArrowClosed,
+    color: "rgba(255,255,255,0.45)",
+    width: 20,
+    height: 20,
+  },
+  style: {
+    stroke: "rgba(255,255,255,0.25)",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+  },
 }
 
 // ── ID generator ───────────────────────────────────────────────────────
@@ -161,6 +190,16 @@ function FlowCanvas() {
                 if (!colorVal) {
                   setField("color", "#6457f9")
                 }
+
+                // Populate missing textColor from NODE_COLORS lookup
+                const textColorVal = getField("textColor")
+                if (!textColorVal) {
+                  const bgColor = getField("color") || "#6457f9"
+                  const match = NODE_COLORS.find(
+                    (nc) => nc.bg.toLowerCase() === String(bgColor).toLowerCase(),
+                  )
+                  setField("textColor", match ? match.text : "#EDEDED")
+                }
               }
             } catch (err) {
               // ignore
@@ -215,6 +254,7 @@ function FlowCanvas() {
               data: new LiveObject({
                 label: "",
                 color: visibleDefaultColor,
+                textColor: "#8b82ff",
                 shape,
               }),
               selected: false,
@@ -386,33 +426,19 @@ function FlowCanvas() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          defaultEdgeOptions={defaultEdgeOptions}
           connectionMode={ConnectionMode.Loose}
+          connectionRadius={40}
+          snapToGrid
+          snapGrid={[10, 10]}
           fitView
           defaultViewport={defaultViewport}
           minZoom={0.1}
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
         >
-          <MiniMap
-            pannable
-            zoomable
-            nodeColor="#6457f9"
-            maskColor="rgba(0,0,0,0.15)"
-            style={{
-              "--xy-minimap-background-color": "rgba(255,255,255,0.03)",
-              "--xy-minimap-mask-background-color": "rgba(0,0,0,0.15)",
-              "--xy-minimap-mask-stroke-color": "transparent",
-              "--xy-minimap-mask-stroke-width": 0,
-              "--xy-minimap-node-background-color": "#6457f9",
-              "--xy-minimap-node-stroke-color": "transparent",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 12,
-              backdropFilter: "blur(16px)",
-              boxShadow:
-                "0 2px 24px rgba(0,0,0,0.3), inset 0 0.5px 0 rgba(255,255,255,0.06)",
-              overflow: "hidden",
-            } as React.CSSProperties}
-          />
+          <ReactFlowControls />
           <Background
             variant={BackgroundVariant.Dots}
             gap={20}
@@ -422,6 +448,27 @@ function FlowCanvas() {
         </ReactFlow>
       </div>
     </ShapePanelContext.Provider>
+  )
+}
+
+// ── Canvas controls that must live inside <ReactFlow> (needs the provider context) ──
+function ReactFlowControls() {
+  const reactFlowInstance = useReactFlow()
+  const undo = useUndo()
+  const redo = useRedo()
+  const canUndo = useCanUndo()
+  const canRedo = useCanRedo()
+
+  useKeyboardShortcuts({ reactFlowInstance, undo, redo })
+
+  return (
+    <CanvasControls
+      reactFlowInstance={reactFlowInstance}
+      canUndo={canUndo}
+      canRedo={canRedo}
+      undo={undo}
+      redo={redo}
+    />
   )
 }
 

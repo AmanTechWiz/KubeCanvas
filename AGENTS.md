@@ -17,6 +17,6 @@ Read the following files in order before implementing or making any architectura
 5. `context/ai-workflow-rules.md` — development workflow, scoping rules, and delivery approach
 6. `context/progress-tracker.md` — current phase, completed work, open questions, and next steps
 
-Update `context/progress-tracker.md` after each meaningful implementation change.
+Update `context/progress-tracker.md` after each meaningful implementation change and make sure to keep updating current phase too.
 
 If implementation changes the architecture, scope, or standards documented in the context files, update the relevant file before continuing.

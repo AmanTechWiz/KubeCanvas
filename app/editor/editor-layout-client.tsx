@@ -61,11 +61,14 @@ export function EditorLayoutClient({
 
   return (
     <EditorContext.Provider value={{ openCreate }}>
-      <div className="flex h-screen flex-col">
-        <EditorNavbar
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-        />
+      <div className="relative h-screen overflow-hidden">
+        {/* Floating pill navbar over canvas */}
+        <div className="absolute top-2 inset-x-2 z-[60]">
+          <EditorNavbar
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          />
+        </div>
 
         <ProjectSidebar
           isOpen={sidebarOpen}
@@ -81,7 +84,7 @@ export function EditorLayoutClient({
           onDeleteProject={openDelete}
         />
 
-        <main className="flex flex-1 overflow-hidden">
+        <main className="flex h-full overflow-hidden">
           {children}
         </main>
 

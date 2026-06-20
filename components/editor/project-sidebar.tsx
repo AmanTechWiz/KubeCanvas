@@ -103,19 +103,18 @@ export function ProjectSidebar({
   return (
     <>
       <div
-        className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 ${
+        className={`fixed inset-0 z-40 bg-black/20 backdrop-blur-sm transition-opacity duration-200 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={onClose}
       />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-card transition-transform duration-200 ease-in-out ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        style={{ transform: isOpen ? "translateX(0)" : "translateX(-300px)", opacity: isOpen ? 1 : 0, pointerEvents: isOpen ? "auto" : "none", transition: isOpen ? "transform 250ms cubic-bezier(0.4,0,0.2,1), opacity 200ms ease" : "transform 400ms cubic-bezier(0.4,0,0.6,1), opacity 350ms ease" }}
+        className="fixed left-2 top-[56px] bottom-2 z-50 flex w-72 flex-col rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_24px_rgba(0,0,0,0.3),inset_0_0.5px_0_rgba(255,255,255,0.06)]"
       >
-        <div className="flex flex-1 flex-col overflow-hidden pt-12">
-          <div className="flex-1 overflow-hidden p-3">
+        <div className="flex flex-1 flex-col overflow-hidden p-3">
+          <div className="flex-1 overflow-hidden px-1">
             <Tabs defaultValue="my-projects" className="flex h-full flex-col">
               <TabsList variant="line" className="w-full justify-start">
                 <TabsTrigger value="my-projects" className="cursor-pointer">My Projects</TabsTrigger>
@@ -180,7 +179,7 @@ export function ProjectSidebar({
             </Tabs>
           </div>
 
-          <div className="border-t border-border p-3">
+          <div className="border-t border-white/[0.08] p-3">
             <Button
               className="w-full cursor-pointer"
               size="default"
