@@ -123,12 +123,7 @@ export function useAutosave({
       clearTimeout(timeoutRef.current);
     }
 
-    // Skip if nodes and edges are both empty (initial empty room)
-    if ((!nodes || nodes.length === 0) && (!edges || edges.length === 0)) {
-      return;
-    }
-
-    // Debounce the save
+    // Debounce the save (including empty state after clear-all)
     timeoutRef.current = setTimeout(() => {
       save();
     }, debounceMs);
