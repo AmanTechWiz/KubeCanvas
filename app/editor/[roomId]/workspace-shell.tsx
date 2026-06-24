@@ -10,7 +10,6 @@ import {
   LayoutTemplate,
   Save,
 } from "lucide-react"
-import { UserButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { ProjectSidebar } from "@/components/editor/project-sidebar"
 import { CreateProjectDialog } from "@/components/editor/create-project-dialog"
@@ -195,10 +194,6 @@ export function WorkspaceShell({
                 <Share2 className="h-4 w-4" />
                 <span className="hidden sm:inline">Share</span>
               </Button>
-
-              <div className="ml-1 flex items-center justify-center h-10">
-                <UserButton />
-              </div>
             </div>
           </div>
         </div>
