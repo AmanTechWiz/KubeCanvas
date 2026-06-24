@@ -326,10 +326,8 @@ function FlowCanvas({
           let before = 0
           nodesMap.forEach(() => before++)
 
-          // Per spec: create nodes with an empty label. From earlier
-          // debugging we learned the stored node color must be visible
-          // against the dark canvas, so choose a readable default color.
-          const visibleDefaultColor = "#6457f9"
+          // Default to Neutral color (first in the color picker)
+          const defaultColor = NODE_COLORS[0]
 
           nodesMap.set(
             id,
@@ -343,8 +341,8 @@ function FlowCanvas({
               height: h,
               data: new LiveObject({
                 label: "",
-                color: visibleDefaultColor,
-                textColor: "#8b82ff",
+                color: defaultColor.bg,
+                textColor: defaultColor.text,
                 shape,
               }),
               selected: false,
@@ -362,7 +360,7 @@ function FlowCanvas({
     [],
   )
 
-    // Clear all nodes mutation (deletes every entry in the nodes map)
+    // Clear all nodes and edges from the canvas
     const clearNodesMutation = useMutation(({ storage }) => {
       try {
         const flow = storage.get("flow")
@@ -371,6 +369,11 @@ function FlowCanvas({
         const toDelete: string[] = []
         nodesMap.forEach((_n, k) => toDelete.push(k))
         for (const k of toDelete) nodesMap.delete(k)
+
+        const edgesMap = flow.get("edges")
+        const edgesToDelete: string[] = []
+        edgesMap.forEach((_e, k) => edgesToDelete.push(k))
+        for (const k of edgesToDelete) edgesMap.delete(k)
       } catch (err) {
         console.error("[FlowCanvas] clearNodesMutation error:", err)
       }

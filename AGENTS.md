@@ -23,4 +23,6 @@ always use bun for testing builds for passes.
 
 must - write commit messages like how human would write (short , context , on point) in any branch.
 
+must - ask before pushing any code. never by their own.
+
 If implementation changes the architecture, scope, or standards documented in the context files, update the relevant file before continuing.
