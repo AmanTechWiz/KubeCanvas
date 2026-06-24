@@ -7,6 +7,7 @@ interface UseKeyboardShortcutsOptions {
   reactFlowInstance: ReactFlowInstance | null
   undo: () => void
   redo: () => void
+  deleteSelected?: () => void
 }
 
 /** Tags whose keyboard events should be ignored (editable fields). */
@@ -26,6 +27,7 @@ export function useKeyboardShortcuts({
   reactFlowInstance,
   undo,
   redo,
+  deleteSelected,
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     if (!reactFlowInstance) return
@@ -68,9 +70,16 @@ export function useKeyboardShortcuts({
         redo()
         return
       }
+
+      // Delete / Backspace → remove selected nodes
+      if (!mod && (e.key === "Delete" || e.key === "Backspace")) {
+        e.preventDefault()
+        deleteSelected?.()
+        return
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [reactFlowInstance, undo, redo])
+  }, [reactFlowInstance, undo, redo, deleteSelected])
 }

@@ -580,7 +580,41 @@ function ReactFlowControls() {
   const canUndo = useCanUndo()
   const canRedo = useCanRedo()
 
-  useKeyboardShortcuts({ reactFlowInstance, undo, redo })
+  const deleteNodesMutation = useMutation(({ storage }, nodeIds: string[]) => {
+    try {
+      const flow = storage.get("flow")
+      if (!flow) return
+      const nodesMap = flow.get("nodes")
+      const edgesMap = flow.get("edges")
+
+      // Delete selected nodes
+      for (const id of nodeIds) {
+        nodesMap.delete(id)
+      }
+
+      // Delete edges connected to removed nodes
+      const toDeleteEdges: string[] = []
+      edgesMap.forEach((edge, key) => {
+        const source = typeof (edge as any).get === "function" ? (edge as any).get("source") : (edge as any).source
+        const target = typeof (edge as any).get === "function" ? (edge as any).get("target") : (edge as any).target
+        if (nodeIds.includes(source) || nodeIds.includes(target)) {
+          toDeleteEdges.push(key)
+        }
+      })
+      for (const k of toDeleteEdges) edgesMap.delete(k)
+    } catch (err) {
+      console.error("[ReactFlowControls] deleteNodes error:", err)
+    }
+  }, [])
+
+  const deleteSelected = useCallback(() => {
+    if (!reactFlowInstance) return
+    const selectedNodes = reactFlowInstance.getNodes().filter((n) => n.selected)
+    if (selectedNodes.length === 0) return
+    deleteNodesMutation(selectedNodes.map((n) => n.id))
+  }, [reactFlowInstance, deleteNodesMutation])
+
+  useKeyboardShortcuts({ reactFlowInstance, undo, redo, deleteSelected })
 
   return (
     <CanvasControls
