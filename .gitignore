@@ -1,6 +1,12 @@
 node_modules/
 .env
+.env.local
 .next/
 *.zip
 .agents/
+.vscode/
+.trigger/
+.DS_Store
+*.dmg
+tsconfig.tsbuildinfo
 /app/generated/prisma

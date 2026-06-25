@@ -19,7 +19,6 @@ import { useProjectActions } from "@/hooks/use-project-actions"
 import { EditorContext } from "@/hooks/use-editor-context"
 import { ShareDialog } from "@/components/editor/share-dialog"
 import { ShapeDragPreview } from "@/components/editor/shape-drag-preview"
-import { AiSidebar } from "@/components/editor/ai-sidebar"
 import { CanvasEditor } from "./canvas-editor"
 import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal"
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
@@ -240,16 +239,11 @@ export function WorkspaceShell({
               onTemplateImported={() => setPendingTemplate(null)}
               currentUserId={currentUserId}
               aiSidebarOpen={aiSidebarOpen}
+              onAiSidebarClose={() => setAiSidebarOpen(false)}
               onSaveApi={setSaveApi}
             />
             <ShapeDragPreview />
           </div>
-
-          {/* AI sidebar */}
-          <AiSidebar
-            isOpen={aiSidebarOpen}
-            onClose={() => setAiSidebarOpen(false)}
-          />
         </div>
 
         {/* Project dialogs */}

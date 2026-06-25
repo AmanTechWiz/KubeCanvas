@@ -1,6 +1,6 @@
 "use client"
 
-import {
+import React, {
   useCallback,
   useMemo,
   useEffect,
@@ -19,6 +19,12 @@ import {
   useCanUndo,
   useCanRedo,
   useUpdateMyPresence,
+  useOthers,
+  useSelf,
+  useCreateFeed,
+  useFeeds,
+  useFeedMessages,
+  useCreateFeedMessage,
 } from "@liveblocks/react"
 
 import { useLiveblocksFlow } from "@liveblocks/react-flow"
@@ -43,10 +49,19 @@ import {
 import { CanvasControls } from "@/components/editor/canvas-controls"
 import { CollaboratorAvatars } from "@/components/editor/collaborator-avatars"
 import { LiveCursors } from "@/components/editor/live-cursors"
+import { AiSidebar } from "@/components/editor/ai-sidebar"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useAutosave, type SaveStatus } from "@/hooks/use-autosave"
 import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
 import { parseShapeDrag, SHAPES } from "@/lib/canvas-shapes"
+import {
+  AI_STATUS_FEED_ID,
+  AI_CHAT_FEED_ID,
+  validateAiStatusFeedMessage,
+  validateAiChatFeedMessage,
+  type AiStatusFeedMessageData,
+  type AiChatFeedMessageData,
+} from "@/types/tasks"
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
 
 // ── React Flow defaults ────────────────────────────────────────────────
@@ -60,6 +75,121 @@ const nodeTypes = {
 // ── Custom edge types ──────────────────────────────────────────────────
 const edgeTypes = {
   canvasEdge: CanvasEdgeComponent,
+}
+
+// ── Feed contexts (must be inside RoomProvider) ─────────────────────
+// Provides sendFeedMessage + sendChatMessage to AiSidebar and child tabs
+// so they can broadcast updates without calling Liveblocks feed hooks directly.
+// The two feeds (status + chat) are separate Liveblocks feeds but share
+// a single provider for convenience.
+
+interface FeedContextValue {
+  sendFeedMessage: (data: AiStatusFeedMessageData) => void
+  latestFeedMsg: AiStatusFeedMessageData | null
+  isAiActive: boolean
+  statusLabel: string | null
+  sendChatMessage: (data: AiChatFeedMessageData) => void
+  chatMessages: AiChatFeedMessageData[]
+  currentUserName: string
+}
+
+export const FeedContext = React.createContext<FeedContextValue | null>(null)
+
+function FeedProvider({ children }: { children: React.ReactNode }) {
+  const createFeed = useCreateFeed()
+  const createFeedMessage = useCreateFeedMessage()
+  const { feeds } = useFeeds()
+  const self = useSelf()
+
+  const currentUserName = self?.info?.name ?? "You"
+
+  // ── Status feed ───────────────────────────────────────────────────
+  useEffect(() => {
+    createFeed(AI_STATUS_FEED_ID, { metadata: { name: "AI Status" } }).catch(
+      () => {}, // Ignore "feed already exists" errors
+    )
+  }, [createFeed])
+
+  const { messages: statusFeedMessages } = useFeedMessages(AI_STATUS_FEED_ID)
+
+  const latestFeedMsg = useMemo(() => {
+    if (!statusFeedMessages || statusFeedMessages.length === 0) return null
+    return validateAiStatusFeedMessage(statusFeedMessages[0].data)
+  }, [statusFeedMessages])
+
+  // Only use feed status for AI activity — do NOT include useOthers/
+  // anyOtherThinking here because the AI agent sets presence via the
+  // Liveblocks REST API and clearance can lag behind the feed update,
+  // keeping the "thinking" indicator visible after completion.
+  const isAiActive =
+    latestFeedMsg?.status === "thinking" ||
+    latestFeedMsg?.status === "analyzing" ||
+    latestFeedMsg?.status === "generating"
+
+  const statusLabel = useMemo(() => {
+    if (!latestFeedMsg) return null
+    switch (latestFeedMsg.status) {
+      case "thinking":
+        return "Thinking…"
+      case "analyzing":
+        return "Analyzing…"
+      case "generating":
+        return "Generating…"
+      case "complete":
+        return "Complete"
+      case "failed":
+        return "Failed"
+      default:
+        return null
+    }
+  }, [latestFeedMsg])
+
+  const sendFeedMessage = useCallback(
+    (data: AiStatusFeedMessageData) => {
+      createFeedMessage(AI_STATUS_FEED_ID, data)
+    },
+    [createFeedMessage],
+  )
+
+  // ── Chat feed ─────────────────────────────────────────────────────
+  useEffect(() => {
+    createFeed(AI_CHAT_FEED_ID, { metadata: { name: "AI Chat" } }).catch(
+      () => {}, // Ignore "feed already exists" errors
+    )
+  }, [createFeed])
+
+  const { messages: chatFeedMessages } = useFeedMessages(AI_CHAT_FEED_ID)
+
+  const chatMessages = useMemo(() => {
+    if (!chatFeedMessages) return []
+    return chatFeedMessages
+      .map((m) => validateAiChatFeedMessage(m.data))
+      .filter((m): m is AiChatFeedMessageData => m !== null)
+      .sort((a, b) => a.timestamp - b.timestamp)
+  }, [chatFeedMessages])
+
+  const sendChatMessage = useCallback(
+    (data: AiChatFeedMessageData) => {
+      createFeedMessage(AI_CHAT_FEED_ID, data)
+    },
+    [createFeedMessage],
+  )
+
+  return (
+    <FeedContext.Provider
+      value={{
+        sendFeedMessage,
+        latestFeedMsg,
+        isAiActive,
+        statusLabel,
+        sendChatMessage,
+        chatMessages,
+        currentUserName,
+      }}
+    >
+      {children}
+    </FeedContext.Provider>
+  )
 }
 
 // ── Default edge options ───────────────────────────────────────────────
@@ -138,6 +268,7 @@ function FlowCanvas({
   onTemplateImported,
   currentUserId,
   aiSidebarOpen,
+  onAiSidebarClose,
   onSaveApi,
 }: {
   projectId: string
@@ -145,6 +276,7 @@ function FlowCanvas({
   onTemplateImported?: () => void
   currentUserId: string
   aiSidebarOpen?: boolean
+  onAiSidebarClose?: () => void
   onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
 }) {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect } =
@@ -531,6 +663,16 @@ function FlowCanvas({
 
       {/* Shape panel + clear — bottom-center */}
       <ShapePanel />
+
+      {/* AI sidebar — rendered inside RoomProvider so feed hooks work */}
+      <FeedProvider>
+        <AiSidebar
+          isOpen={!!aiSidebarOpen}
+          onClose={onAiSidebarClose ?? (() => {})}
+          projectId={projectId}
+          currentUserId={currentUserId}
+        />
+      </FeedProvider>
 
       <div
         className="h-full w-full"
@@ -920,6 +1062,7 @@ export interface CanvasEditorProps {
   onTemplateImported?: () => void
   currentUserId: string
   aiSidebarOpen?: boolean
+  onAiSidebarClose?: () => void
   onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
 }
 
@@ -930,6 +1073,7 @@ export function CanvasEditor({
   onTemplateImported,
   currentUserId,
   aiSidebarOpen,
+  onAiSidebarClose,
   onSaveApi,
 }: CanvasEditorProps) {
   return (
@@ -954,6 +1098,7 @@ export function CanvasEditor({
               onTemplateImported={onTemplateImported}
               currentUserId={currentUserId}
               aiSidebarOpen={aiSidebarOpen}
+              onAiSidebarClose={onAiSidebarClose}
               onSaveApi={onSaveApi}
             />
           </ClientSideSuspense>

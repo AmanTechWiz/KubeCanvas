@@ -2,6 +2,7 @@
 
 import { useMemo } from "react"
 import { useOthers } from "@liveblocks/react"
+import { Loader2 } from "lucide-react"
 import { getUserColor } from "@/lib/liveblocks"
 
 /** Returns "#fff" or "#111" depending on the perceived luminance of a hex color. */
@@ -70,6 +71,7 @@ export function LiveCursors({ currentUserId, viewport }: LiveCursorsProps) {
           textColor,
           name,
           initials,
+          isThinking: other.presence.isThinking,
         }
       })
   }, [others, viewport])
@@ -108,10 +110,16 @@ export function LiveCursors({ currentUserId, viewport }: LiveCursorsProps) {
 
           {/* Name badge */}
           <div
-            className="absolute left-3.5 top-4 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-none shadow-lg"
+            className="absolute left-3.5 top-4 flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-none shadow-lg"
             style={{ backgroundColor: c.color, color: c.textColor }}
           >
             {c.name}
+            {c.isThinking && (
+              <Loader2
+                className="size-2.5 animate-spin"
+                style={{ color: c.textColor }}
+              />
+            )}
           </div>
         </div>
       ))}

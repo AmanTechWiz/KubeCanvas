@@ -38,6 +38,17 @@ declare global {
 
     // Custom room info set with resolveRoomsInfo, for useRoomInfo
     RoomInfo: {};
+
+    // Feed metadata type for useFeeds
+    FeedMetadata: {
+      name?: string;
+    };
+
+    // Feed message data type for useFeedMessages
+    // Discriminated union: "status" for AI activity, "chat" for sidebar chat
+    FeedMessageData:
+      | { kind: "status"; status: "thinking" | "analyzing" | "generating" | "complete" | "failed" | "idle"; text?: string }
+      | { kind: "chat"; id: string; sender: string; role: "user" | "assistant"; content: string; timestamp: number };
   }
 }
 
