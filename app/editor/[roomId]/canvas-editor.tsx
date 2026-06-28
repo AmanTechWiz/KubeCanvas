@@ -46,17 +46,24 @@ import {
   ShapePanel,
   type AddNodePayload,
 } from "@/components/editor/shape-panel"
+import {
+  LogoPicker,
+  type LogoAddPayload,
+} from "@/components/editor/logo-picker"
 import { CanvasControls } from "@/components/editor/canvas-controls"
 import { CollaboratorAvatars } from "@/components/editor/collaborator-avatars"
 import { LiveCursors } from "@/components/editor/live-cursors"
+import { AgentCursor } from "@/components/editor/agent-cursor"
 import { AiSidebar } from "@/components/editor/ai-sidebar"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useAutosave, type SaveStatus } from "@/hooks/use-autosave"
 import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
 import { parseShapeDrag, SHAPES } from "@/lib/canvas-shapes"
+import { parseLogoDragToCanvas } from "@/lib/logo-data"
 import {
   AI_STATUS_FEED_ID,
   AI_CHAT_FEED_ID,
+  AI_ARCHITECT_FEED_ID,
   validateAiStatusFeedMessage,
   validateAiChatFeedMessage,
   type AiStatusFeedMessageData,
@@ -90,6 +97,8 @@ interface FeedContextValue {
   statusLabel: string | null
   sendChatMessage: (data: AiChatFeedMessageData) => void
   chatMessages: AiChatFeedMessageData[]
+  sendArchitectMessage: (data: AiChatFeedMessageData) => void
+  architectMessages: AiChatFeedMessageData[]
   currentUserName: string
 }
 
@@ -175,6 +184,30 @@ function FeedProvider({ children }: { children: React.ReactNode }) {
     [createFeedMessage],
   )
 
+  // ── Architect feed (separate from chat) ──────────────────────────
+  useEffect(() => {
+    createFeed(AI_ARCHITECT_FEED_ID, { metadata: { name: "AI Architect" } }).catch(
+      () => {},
+    )
+  }, [createFeed])
+
+  const { messages: architectFeedMessages } = useFeedMessages(AI_ARCHITECT_FEED_ID)
+
+  const architectMessages = useMemo(() => {
+    if (!architectFeedMessages) return []
+    return architectFeedMessages
+      .map((m) => validateAiChatFeedMessage(m.data))
+      .filter((m): m is AiChatFeedMessageData => m !== null)
+      .sort((a, b) => a.timestamp - b.timestamp)
+  }, [architectFeedMessages])
+
+  const sendArchitectMessage = useCallback(
+    (data: AiChatFeedMessageData) => {
+      createFeedMessage(AI_ARCHITECT_FEED_ID, data)
+    },
+    [createFeedMessage],
+  )
+
   return (
     <FeedContext.Provider
       value={{
@@ -184,6 +217,8 @@ function FeedProvider({ children }: { children: React.ReactNode }) {
         statusLabel,
         sendChatMessage,
         chatMessages,
+        sendArchitectMessage,
+        architectMessages,
         currentUserName,
       }}
     >
@@ -448,7 +483,7 @@ function FlowCanvas({
   const addNodeMutation = useMutation(
     ({ storage }, payload: AddNodePayload) => {
         try {
-          const { shape, w, h, flowX, flowY } = payload
+          const { shape, w, h, flowX, flowY, logo, logoCustomSvg, label: presetLabel } = payload
           const x = flowX - w / 2
           const y = flowY - h / 2
           const id = generateNodeId(shape)
@@ -472,10 +507,12 @@ function FlowCanvas({
               width: w,
               height: h,
               data: new LiveObject({
-                label: "",
+                label: presetLabel ?? "",
                 color: defaultColor.bg,
                 textColor: defaultColor.text,
                 shape,
+                ...(logo ? { logo } : {}),
+                ...(logoCustomSvg ? { logoCustomSvg } : {}),
               }),
               selected: false,
               dragging: false,
@@ -518,6 +555,25 @@ function FlowCanvas({
     [addNodeMutation],
   )
 
+  // ── Logo picker state ────────────────────────────────────────
+  const [logoPickerOpen, setLogoPickerOpen] = useState(false)
+
+  const handleAddLogo = useCallback(
+    (payload: LogoAddPayload) => {
+      addNodeMutation({
+        shape: "rectangle",
+        w: 120,
+        h: 80,
+        flowX: payload.flowX,
+        flowY: payload.flowY,
+        logo: payload.icon,
+        logoCustomSvg: payload.customSvg,
+        label: payload.label,
+      })
+    },
+    [addNodeMutation],
+  )
+
   // ── Autosave ──────────────────────────────────────────────────────
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle")
   const { manualSave, status } = useAutosave({
@@ -544,7 +600,7 @@ function FlowCanvas({
     try {
       const types = Array.from(e.dataTransfer.types || [])
       console.log("[FlowCanvas] dragover types:", types)
-      if (types.includes("application/x-kubecanvas-shape")) {
+      if (types.includes("application/x-kubecanvas-shape") || types.includes("application/x-kubecanvas-logo")) {
         e.preventDefault()
         e.dataTransfer.dropEffect = "copy"
       }
@@ -559,6 +615,29 @@ function FlowCanvas({
         const types = Array.from(e.dataTransfer.types || [])
         console.log("[FlowCanvas] drop types:", types, "client:", e.clientX, e.clientY)
 
+        // Check for logo drop first
+        const logoRaw = e.dataTransfer.getData("application/x-kubecanvas-logo")
+        if (logoRaw) {
+          const logoPayload = parseLogoDragToCanvas(logoRaw)
+          if (logoPayload) {
+            e.preventDefault()
+            e.stopPropagation()
+            const position = screenToFlowPosition(e.clientX, e.clientY)
+            addNodeMutation({
+              shape: "rectangle",
+              w: logoPayload.w,
+              h: logoPayload.h,
+              flowX: position.x,
+              flowY: position.y,
+              logo: logoPayload.icon,
+              logoCustomSvg: logoPayload.customSvg,
+              label: logoPayload.label,
+            })
+            return
+          }
+        }
+
+        // Fall back to shape drop
         const raw = e.dataTransfer.getData("application/x-kubecanvas-shape")
         console.log("[FlowCanvas] drop raw:", raw)
         const payload = parseShapeDrag(raw)
@@ -604,7 +683,7 @@ function FlowCanvas({
         const e: any = ev
         const types = Array.from((e.dataTransfer && e.dataTransfer.types) || [])
         console.log("[FlowCanvas native] dragover types:", types)
-        if (types.includes("application/x-kubecanvas-shape")) {
+        if (types.includes("application/x-kubecanvas-shape") || types.includes("application/x-kubecanvas-logo")) {
           e.preventDefault()
           if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"
         }
@@ -616,6 +695,28 @@ function FlowCanvas({
     const onNativeDrop = (ev: Event) => {
       try {
         const e: any = ev
+
+        // Check for logo drop first
+        const logoRaw = (e.dataTransfer && (e.dataTransfer.getData("application/x-kubecanvas-logo") || e.dataTransfer.getData("text/plain"))) || ""
+        const logoPayload = parseLogoDragToCanvas(logoRaw)
+        if (logoPayload) {
+          e.preventDefault()
+          e.stopPropagation()
+          const pos = screenToFlowPosition(e.clientX, e.clientY)
+          setNativePendingDrop({
+            shape: "rectangle",
+            w: logoPayload.w,
+            h: logoPayload.h,
+            flowX: pos.x,
+            flowY: pos.y,
+            logo: logoPayload.icon,
+            logoCustomSvg: logoPayload.customSvg,
+            label: logoPayload.label,
+          })
+          return
+        }
+
+        // Fall back to shape drop
         const raw = (e.dataTransfer && (e.dataTransfer.getData("application/x-kubecanvas-shape") || e.dataTransfer.getData("text/plain"))) || ""
         console.log("[FlowCanvas native] drop raw:", raw, "client:", e.clientX, e.clientY)
         const payload = parseShapeDrag(raw)
@@ -647,7 +748,14 @@ function FlowCanvas({
   }, [addNodeMutation])
 
   return (
-    <ShapePanelContext.Provider value={{ addNode: handleAddNode, onClear: () => clearNodesMutation() }}>
+    <ShapePanelContext.Provider
+      value={{
+        addNode: handleAddNode,
+        onClear: () => clearNodesMutation(),
+        onOpenLogoPicker: () => setLogoPickerOpen((v) => !v),
+        logoPickerOpen,
+      }}
+    >
       {/* Canvas state loader — fetches saved state if room is empty */}
       {!canvasLoaded && (
         <CanvasLoader projectId={projectId} onLoaded={() => setCanvasLoaded(true)} />
@@ -663,6 +771,13 @@ function FlowCanvas({
 
       {/* Shape panel + clear — bottom-center */}
       <ShapePanel />
+
+      {/* Logo picker panel */}
+      <LogoPicker
+        isOpen={logoPickerOpen}
+        onClose={() => setLogoPickerOpen(false)}
+        onAddLogo={handleAddLogo}
+      />
 
       {/* AI sidebar — rendered inside RoomProvider so feed hooks work */}
       <FeedProvider>
@@ -700,6 +815,7 @@ function FlowCanvas({
           onMove={handleMove}
         >
           <LiveCursors currentUserId={currentUserId} viewport={viewport} />
+          <AgentCursor />
           <ReactFlowControls />
           <TemplateImporter
             pendingTemplate={pendingTemplate}
@@ -752,12 +868,27 @@ function ReactFlowControls() {
     }
   }, [])
 
+  const deleteEdgesMutation = useMutation(({ storage }, edgeIds: string[]) => {
+    try {
+      const flow = storage.get("flow")
+      if (!flow) return
+      const edgesMap = flow.get("edges")
+      for (const id of edgeIds) {
+        edgesMap.delete(id)
+      }
+    } catch (err) {
+      console.error("[ReactFlowControls] deleteEdges error:", err)
+    }
+  }, [])
+
   const deleteSelected = useCallback(() => {
     if (!reactFlowInstance) return
     const selectedNodes = reactFlowInstance.getNodes().filter((n) => n.selected)
-    if (selectedNodes.length === 0) return
-    deleteNodesMutation(selectedNodes.map((n) => n.id))
-  }, [reactFlowInstance, deleteNodesMutation])
+    const selectedEdges = reactFlowInstance.getEdges().filter((e) => e.selected)
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) return
+    if (selectedNodes.length > 0) deleteNodesMutation(selectedNodes.map((n) => n.id))
+    if (selectedEdges.length > 0) deleteEdgesMutation(selectedEdges.map((e) => e.id))
+  }, [reactFlowInstance, deleteNodesMutation, deleteEdgesMutation])
 
   useKeyboardShortcuts({ reactFlowInstance, undo, redo, deleteSelected })
 
@@ -1083,7 +1214,7 @@ export function CanvasEditor({
       >
         <RoomProvider
           id={roomId}
-          initialPresence={{ cursor: null, isThinking: false }}
+          initialPresence={{ cursor: null, isThinking: false, agentCursor: null }}
           initialStorage={{
             flow: new LiveObject({
               nodes: new LiveMap(),

@@ -54,6 +54,9 @@ export const AI_STATUS_FEED_ID = "ai-status-feed";
 /** Well-known feed ID for collaborative sidebar chat messages. */
 export const AI_CHAT_FEED_ID = "ai-chat";
 
+/** Well-known feed ID for architect agent messages. */
+export const AI_ARCHITECT_FEED_ID = "ai-architect";
+
 /**
  * Validate a raw feed message payload as a status feed message.
  * Returns parsed data on success, null on failure.

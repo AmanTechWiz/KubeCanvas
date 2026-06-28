@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { put } from "@vercel/blob";
 
 /**
  * Verify the current user has project access (owner or collaborator).
@@ -10,7 +9,7 @@ import { put } from "@vercel/blob";
 async function requireProjectAccess(projectId: string, userId: string) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { ownerId: true, canvasJsonPath: true },
+    select: { ownerId: true, canvasJson: true },
   });
 
   if (!project) return null;
@@ -29,7 +28,7 @@ async function requireProjectAccess(projectId: string, userId: string) {
 }
 
 /**
- * PUT — Save canvas JSON to Vercel Blob, store the blob URL on the project.
+ * PUT — Save canvas JSON directly to the database.
  */
 export async function PUT(
   request: Request,
@@ -57,24 +56,17 @@ export async function PUT(
     );
   }
 
-  // Upload canvas JSON to Vercel Blob (allowOverwrite handles re-saves)
-  const blob = await put(`canvas/${projectId}.json`, JSON.stringify(canvasJson), {
-    contentType: "application/json",
-    access: "private",
-    allowOverwrite: true,
-  });
-
-  // Store the blob URL on the project record
+  // Store canvas JSON directly in the database
   await prisma.project.update({
     where: { id: projectId },
-    data: { canvasJsonPath: blob.url },
+    data: { canvasJson },
   });
 
-  return NextResponse.json({ url: blob.url });
+  return NextResponse.json({ ok: true });
 }
 
 /**
- * GET — Load saved canvas JSON from Vercel Blob.
+ * GET — Load saved canvas JSON directly from the database.
  */
 export async function GET(
   _request: Request,
@@ -92,18 +84,5 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (!project.canvasJsonPath) {
-    return NextResponse.json({ canvasJson: null });
-  }
-
-  try {
-    const response = await fetch(project.canvasJsonPath);
-    if (!response.ok) {
-      return NextResponse.json({ canvasJson: null });
-    }
-    const canvasJson = await response.json();
-    return NextResponse.json({ canvasJson });
-  } catch {
-    return NextResponse.json({ canvasJson: null });
-  }
+  return NextResponse.json({ canvasJson: project.canvasJson ?? null });
 }

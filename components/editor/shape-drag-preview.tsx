@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import StackIcon from "tech-stack-icons";
 import type { NodeShape } from "@/types/canvas";
 import { parseShapeDrag } from "@/lib/canvas-shapes";
+import { parseLogoDragToCanvas } from "@/lib/logo-data";
+import { NODE_COLORS } from "@/types/canvas";
 
 // ── SVG shape paths for the ghost preview ─────────────────────────────
 
@@ -91,17 +94,31 @@ const GHOST_SHAPES: Record<NodeShape, React.ComponentType<{ color: string }>> = 
   cylinder: GhostCylinder,
 };
 
-const GHOST_DEFAULT_COLOR = "#6457f9";
+const GHOST_DEFAULT_COLOR = NODE_COLORS[0].bg;
 
 // ── Drag preview state ────────────────────────────────────────────────
 
-interface DragState {
+interface ShapeDragState {
+  kind: "shape";
   shape: NodeShape;
   w: number;
   h: number;
   x: number;
   y: number;
 }
+
+interface LogoDragState {
+  kind: "logo";
+  icon: string;
+  label: string;
+  customSvg?: string;
+  w: number;
+  h: number;
+  x: number;
+  y: number;
+}
+
+type DragState = ShapeDragState | LogoDragState;
 
 /**
  * Renders a semi-transparent ghost of the shape being dragged from the
@@ -115,22 +132,31 @@ interface DragState {
  */
 export function ShapeDragPreview() {
   const [drag, setDrag] = useState<DragState | null>(null);
-  // Cached payload captured during dragstart — getData() is empty during dragover
-  const payloadRef = useRef<{ shape: NodeShape; w: number; h: number } | null>(null);
+  const payloadRef = useRef<DragState | null>(null);
 
   // ── dragstart: capture the payload (getData works here) ────────────
   const onDragStart = useCallback((e: DragEvent) => {
     try {
       const types = Array.from(e.dataTransfer?.types || []);
-      if (!types.includes("application/x-kubecanvas-shape")) return;
 
-      const raw =
-        e.dataTransfer?.getData("application/x-kubecanvas-shape") ||
-        e.dataTransfer?.getData("text/plain") ||
-        "";
-      const payload = parseShapeDrag(raw);
-      if (payload) {
-        payloadRef.current = { shape: payload.shape, w: payload.w, h: payload.h };
+      if (types.includes("application/x-kubecanvas-shape")) {
+        const raw =
+          e.dataTransfer?.getData("application/x-kubecanvas-shape") ||
+          e.dataTransfer?.getData("text/plain") ||
+          "";
+        const payload = parseShapeDrag(raw);
+        if (payload) {
+          payloadRef.current = { kind: "shape", shape: payload.shape, w: payload.w, h: payload.h, x: 0, y: 0 };
+        }
+      } else if (types.includes("application/x-kubecanvas-logo")) {
+        const raw =
+          e.dataTransfer?.getData("application/x-kubecanvas-logo") ||
+          e.dataTransfer?.getData("text/plain") ||
+          "";
+        const payload = parseLogoDragToCanvas(raw);
+        if (payload) {
+          payloadRef.current = { kind: "logo", icon: payload.icon, label: payload.label, customSvg: payload.customSvg, w: payload.w, h: payload.h, x: 0, y: 0 };
+        }
       }
     } catch {
       // Defensive
@@ -141,7 +167,9 @@ export function ShapeDragPreview() {
   const onDragOver = useCallback((e: DragEvent) => {
     try {
       const types = Array.from(e.dataTransfer?.types || []);
-      if (!types.includes("application/x-kubecanvas-shape")) return;
+      const isShape = types.includes("application/x-kubecanvas-shape");
+      const isLogo = types.includes("application/x-kubecanvas-logo");
+      if (!isShape && !isLogo) return;
 
       // Suppress default to allow drop
       e.preventDefault();
@@ -151,18 +179,10 @@ export function ShapeDragPreview() {
 
       setDrag((prev) => {
         if (prev) {
-          // Already initialised — just update cursor position
           if (prev.x === e.clientX && prev.y === e.clientY) return prev;
           return { ...prev, x: e.clientX, y: e.clientY };
         }
-        // First dragover — initialise the preview
-        return {
-          shape: cached.shape,
-          w: cached.w,
-          h: cached.h,
-          x: e.clientX,
-          y: e.clientY,
-        };
+        return { ...cached, x: e.clientX, y: e.clientY };
       });
     } catch {
       // Defensive
@@ -173,6 +193,31 @@ export function ShapeDragPreview() {
     setDrag(null);
     payloadRef.current = null;
   }, []);
+
+  // ── Logo ghost component ──────────────────────────────────────────
+  function LogoGhost({ icon, label, customSvg }: { icon: string; label: string; customSvg?: string }) {
+    return (
+      <div
+        className="w-full h-full rounded-lg flex flex-col items-center justify-center gap-1"
+        style={{
+          background: GHOST_DEFAULT_COLOR,
+          border: "1px solid rgba(255,255,255,0.15)",
+        }}
+      >
+        {customSvg ? (
+          <span
+            className="h-7 w-7 [&_svg]:h-full [&_svg]:w-full"
+            dangerouslySetInnerHTML={{ __html: customSvg }}
+          />
+        ) : icon ? (
+          <StackIcon name={icon as any} variant="dark" className="h-7 w-7" />
+        ) : null}
+        <span className="text-sm font-medium px-2 truncate max-w-full pointer-events-none text-white/80">
+          {label}
+        </span>
+      </div>
+    );
+  }
 
   useEffect(() => {
     document.addEventListener("dragstart", onDragStart);
@@ -190,7 +235,23 @@ export function ShapeDragPreview() {
 
   if (!drag) return null;
 
-  const Ghost = GHOST_SHAPES[drag.shape];
+  if (drag.kind === "shape") {
+    const Ghost = GHOST_SHAPES[drag.shape];
+    return (
+      <div
+        className="pointer-events-none fixed z-[9999]"
+        style={{
+          left: drag.x - drag.w / 2,
+          top: drag.y - drag.h / 2,
+          width: drag.w,
+          height: drag.h,
+          opacity: 0.5,
+        }}
+      >
+        <Ghost color={GHOST_DEFAULT_COLOR} />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -203,7 +264,7 @@ export function ShapeDragPreview() {
         opacity: 0.5,
       }}
     >
-      <Ghost color={GHOST_DEFAULT_COLOR} />
+      <LogoGhost icon={drag.icon} label={drag.label} customSvg={drag.customSvg} />
     </div>
   );
 }

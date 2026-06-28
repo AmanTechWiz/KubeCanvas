@@ -21,7 +21,7 @@ model Project {
   slug             String          @unique
   description      String?
   status           ProjectStatus   @default(DRAFT)
-  canvasJsonPath   String?
+  canvasJson       Json?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   collaborators    ProjectCollaborator[]

@@ -35,6 +35,10 @@ export interface CanvasNodeData {
   color: string;
   textColor: string;
   shape: NodeShape;
+  /** Tech-stack-icons icon name (when node is a logo node) */
+  logo?: string;
+  /** Inline SVG for icons not in tech-stack-icons */
+  logoCustomSvg?: string;
   [key: string]: unknown; // -> using this for future additional properties!!
 }
 

@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { prompt, projectId } = body;
+  const { prompt, projectId, history } = body;
 
   if (typeof prompt !== "string" || prompt.trim() === "") {
     return NextResponse.json(
@@ -54,10 +54,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Validate optional history array
+  const chatHistory = Array.isArray(history) ? history : [];
+
   // Trigger the design task
   const handle = await tasks.trigger<typeof designTask>("design-agent", {
     prompt: prompt.trim(),
+    roomId: projectId,
     projectId,
+    history: chatHistory,
   });
 
   // Persist the task run for ownership tracking

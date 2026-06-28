@@ -109,6 +109,9 @@ function CanvasEdgeInner(props: EdgeProps) {
     ? "rgba(255,255,255,0.7)"
     : "rgba(255,255,255,0.45)"
 
+  // Dashed stroke when selected to provide clear visual feedback
+  const strokeDasharray = selected ? "6 3" : undefined
+
   return (
     <>
       {/* ── Edge path — markerStart puts arrow at source, markerEnd at target ── */}
@@ -119,10 +122,11 @@ function CanvasEdgeInner(props: EdgeProps) {
         interactionWidth={20}
         style={{
           stroke: edgeStroke,
-          strokeWidth: 2,
+          strokeWidth: selected ? 2.5 : 2,
           strokeLinecap: "round",
           strokeLinejoin: "round",
-          transition: "stroke 150ms ease",
+          strokeDasharray,
+          transition: "stroke 150ms ease, stroke-width 150ms ease",
         }}
       />
 

@@ -12,6 +12,9 @@ declare global {
       cursor: { x: number; y: number } | null;
       // Whether the user is in an AI-thinking state
       isThinking: boolean;
+      // AI agent cursor position (canvas coordinates) — separate from
+      // user cursor so the agent can move independently on the canvas.
+      agentCursor: { x: number; y: number } | null;
     };
 
     // The Storage tree for the room, for useMutation, useStorage, etc.

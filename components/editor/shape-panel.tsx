@@ -7,7 +7,8 @@ import {
   Circle,
   Cylinder,
   Hexagon,
-  HexagonIcon,
+  Minus,
+  Blocks,
 } from "lucide-react";
 import {
   SHAPES,
@@ -25,11 +26,19 @@ export interface AddNodePayload {
   /** Pre-computed flow coordinates (already converted from screen) */
   flowX: number;
   flowY: number;
+  /** Tech-stack-icons icon name for logo nodes */
+  logo?: string;
+  /** Inline SVG for custom icons not in tech-stack-icons */
+  logoCustomSvg?: string;
+  /** Pre-set label (used by logo nodes) */
+  label?: string;
 }
 
 interface ShapePanelContextValue {
   addNode: (payload: AddNodePayload) => void;
   onClear?: () => void;
+  onOpenLogoPicker?: () => void;
+  logoPickerOpen?: boolean;
 }
 
 export const ShapePanelContext = createContext<ShapePanelContextValue | null>(
@@ -47,7 +56,7 @@ const SHAPE_ICONS: Record<NodeShape, React.ComponentType<{ className?: string }>
   rectangle: RectangleHorizontal,
   diamond: Diamond,
   circle: Circle,
-  pill: HexagonIcon,
+  pill: Minus,
   cylinder: Cylinder,
   hexagon: Hexagon,
 };
@@ -95,10 +104,25 @@ function ShapeButton({ shape, label }: { shape: ShapeDragPayload; label: string 
 export function ShapePanel() {
   const ctx = useContext(ShapePanelContext);
   const onClear = ctx?.onClear;
+  const onOpenLogoPicker = ctx?.onOpenLogoPicker;
+  const logoPickerOpen = ctx?.logoPickerOpen;
 
   return (
     <div className="absolute bottom-4 left-1/2 z-50 -translate-x-1/2 pointer-events-none">
       <div className="flex items-center gap-1 rounded-2xl border border-white/[0.08] bg-black/60 px-2 py-1.5 backdrop-blur-xl backdrop-saturate-150 shadow-[0_2px_24px_rgba(0,0,0,0.4),inset_0_0.5px_0_rgba(255,255,255,0.06)]">
+        {/* Logo picker button */}
+        <button
+          onClick={() => onOpenLogoPicker?.()}
+          title="Technology Logos"
+          className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors cursor-pointer pointer-events-auto ${
+            logoPickerOpen
+              ? "bg-white/[0.1] text-foreground"
+              : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+          }`}
+        >
+          <Blocks className="h-4 w-4" />
+        </button>
+        <div className="mx-0.5 h-5 w-px bg-white/[0.12]" />
         {SHAPES.map((s) => (
           <ShapeButton
             key={s.shape}

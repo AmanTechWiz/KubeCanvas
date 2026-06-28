@@ -5,6 +5,7 @@ import {
   Bot,
   X,
   Send,
+  Square,
   FileCode,
   Download,
   Plus,
@@ -16,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { useRealtimeRun } from "@trigger.dev/react-hooks"
 import { FeedContext } from "@/app/editor/[roomId]/canvas-editor"
 import type { AiStatusFeedMessageData, AiChatFeedMessageData } from "@/types/tasks"
+import { renderFormattedText } from "@/lib/format-chat"
 
 interface AiSidebarProps {
   isOpen: boolean
@@ -217,10 +219,10 @@ function AiArchitectTab({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
-  // Chat feed from Liveblocks
+  // Chat feed from Liveblocks (architect-only feed)
   const feedCtx = React.useContext(FeedContext)
-  const chatMessages = feedCtx?.chatMessages ?? []
-  const sendChatMessage = feedCtx?.sendChatMessage
+  const chatMessages = feedCtx?.architectMessages ?? []
+  const sendChatMessage = feedCtx?.sendArchitectMessage
   const statusLabel = feedCtx?.statusLabel ?? null
   const currentUserName = feedCtx?.currentUserName ?? "You"
 
@@ -279,32 +281,8 @@ function AiArchitectTab({
       setActiveRun(null)
 
       if (run.status === "COMPLETED" && run.output) {
-        const { thinking, nodesAdded, edgesAdded, warnings } = run.output
-        const parts: string[] = []
-
-        // Summary line from actual results
-        if (nodesAdded > 0 || edgesAdded > 0) {
-          const nodeLabel = nodesAdded === 1 ? "component" : "components"
-          const edgeLabel = edgesAdded === 1 ? "connection" : "connections"
-          parts.push(
-            `Added ${nodesAdded} ${nodeLabel} and ${edgesAdded} ${edgeLabel} to your canvas.`,
-          )
-        }
-
-        // AI's natural thinking/reasoning as the main response
-        if (thinking) {
-          parts.push(thinking)
-        }
-
-        // Append warnings if any
-        if (warnings && warnings.length > 0) {
-          parts.push(`Note: ${warnings.join("; ")}`)
-        }
-
-        const chatMsg =
-          parts.length > 0
-            ? parts.join("\n\n")
-            : "Design complete. Your canvas has been updated with the new architecture."
+        const { thinking } = run.output
+        const chatMsg = thinking || "Design complete. Your canvas has been updated."
 
         sendFeedMessage({ kind: "status", status: "complete" })
         sendChatMessage?.({
@@ -324,7 +302,7 @@ function AiArchitectTab({
           sender: "KubeAI",
           role: "assistant",
           content:
-            "Design complete. Your canvas has been updated with the new architecture.",
+            "Design complete. Your canvas has been updated.",
           timestamp: Date.now(),
         })
       } else if (
@@ -390,11 +368,17 @@ function AiArchitectTab({
     setIsGenerating(true)
     sendFeedMessage({ kind: "status", status: "thinking", text: prompt })
 
+    // Build conversation history from feed for the design agent
+    const historyForAgent = chatMessages.slice(-20).map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }))
+
     try {
       const res = await fetch("/api/ai/design", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, projectId }),
+        body: JSON.stringify({ prompt, projectId, history: historyForAgent }),
       })
 
       if (!res.ok) {
@@ -440,6 +424,34 @@ function AiArchitectTab({
     if (!trimmed || isGenerating) return
     triggerDesign(trimmed)
   }
+
+  const handleCancel = useCallback(async () => {
+    if (!activeRun) {
+      setIsGenerating(false)
+      return
+    }
+    try {
+      await fetch("/api/ai/design/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ triggerDevRunId: activeRun.triggerDevRunId }),
+      })
+    } catch {
+      // Cancel is best-effort
+    }
+    setIsGenerating(false)
+    setActiveRun(null)
+    setRunPhase(null)
+    sendFeedMessage({ kind: "status", status: "failed", text: "Cancelled by user" })
+    sendChatMessage?.({
+      kind: "chat",
+      id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      sender: "KubeAI",
+      role: "assistant",
+      content: "Design generation was stopped.",
+      timestamp: Date.now(),
+    })
+  }, [activeRun, sendFeedMessage, sendChatMessage])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -537,7 +549,9 @@ function AiArchitectTab({
                       {msg.sender}
                     </p>
                   )}
-                  {msg.content}
+                  <div className="whitespace-pre-wrap leading-relaxed">
+                    {renderFormattedText(msg.content)}
+                  </div>
                   <p className="mt-1 text-[10px] text-muted-foreground/60">
                     {formatTime(msg.timestamp)}
                   </p>
@@ -588,14 +602,24 @@ function AiArchitectTab({
             disabled={isGenerating}
             className="min-h-[72px] max-h-[160px] flex-1 resize-none border-0 bg-transparent p-0 text-sm font-medium text-foreground placeholder:text-muted-foreground focus-visible:border-0 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
           />
-          <Button
-            size="icon-sm"
-            onClick={handleSubmit}
-            disabled={!input.trim() || isGenerating}
-            className="shrink-0 cursor-pointer rounded-xl bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/80 disabled:opacity-40"
-          >
-            <Send className="size-4" />
-          </Button>
+          {isGenerating ? (
+            <Button
+              size="icon-sm"
+              onClick={handleCancel}
+              className="shrink-0 cursor-pointer rounded-xl bg-[var(--state-error)] text-white hover:bg-[var(--state-error)]/80"
+            >
+              <Square className="size-3.5" fill="currentColor" />
+            </Button>
+          ) : (
+            <Button
+              size="icon-sm"
+              onClick={handleSubmit}
+              disabled={!input.trim()}
+              className="shrink-0 cursor-pointer rounded-xl bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/80 disabled:opacity-40"
+            >
+              <Send className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -610,15 +634,33 @@ function AiChatTab({ projectId }: { projectId: string }) {
   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+  const [streamingText, setStreamingText] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Seed messages from Liveblocks feed for cross-session memory
+  const feedCtx = React.useContext(FeedContext)
+  const feedChatMessages = feedCtx?.chatMessages ?? []
+  const seededRef = useRef(false)
+
+  useEffect(() => {
+    if (seededRef.current) return
+    if (feedChatMessages.length === 0) return
+    seededRef.current = true
+    const seeded = feedChatMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }))
+    setMessages(seeded)
+  }, [feedChatMessages])
+
   // Auto-scroll to latest message
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, isLoading])
+  }, [messages, isLoading, isStreaming, streamingText])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -649,6 +691,8 @@ function AiChatTab({ projectId }: { projectId: string }) {
     setMessages(updatedMessages)
     setInput("")
     setIsLoading(true)
+    setIsStreaming(false)
+    setStreamingText("")
     setChatError(null)
 
     const controller = new AbortController()
@@ -667,16 +711,51 @@ function AiChatTab({ projectId }: { projectId: string }) {
         throw new Error(data.error || "Failed to get response")
       }
 
-      const { reply } = await res.json()
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }])
+      // Check if response is streaming (SSE) or plain JSON
+      const contentType = res.headers.get("content-type") || ""
+      if (contentType.includes("text/plain") || contentType.includes("text/event-stream")) {
+        // Plain text stream from AI SDK — raw text chunks
+        setIsStreaming(true)
+        const reader = res.body?.getReader()
+        if (!reader) throw new Error("No response body")
+
+        const decoder = new TextDecoder()
+        let accumulated = ""
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value, { stream: true })
+          accumulated += chunk
+          setStreamingText(accumulated)
+        }
+
+        setMessages((prev) => [...prev, { role: "assistant", content: accumulated }])
+        setStreamingText("")
+      } else {
+        // Plain JSON response (fallback)
+        const { reply } = await res.json()
+        setMessages((prev) => [...prev, { role: "assistant", content: reply }])
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return
       const errMsg = error instanceof Error ? error.message : "Something went wrong"
       setChatError(errMsg)
     } finally {
       setIsLoading(false)
+      setIsStreaming(false)
+      setStreamingText("")
       abortRef.current = null
     }
+  }
+
+  const handleStop = () => {
+    abortRef.current?.abort()
+    setIsLoading(false)
+    setIsStreaming(false)
+    setStreamingText("")
+    abortRef.current = null
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -692,11 +771,14 @@ function AiChatTab({ projectId }: { projectId: string }) {
     textareaRef.current?.focus()
   }
 
+  // Active thinking state — show spinner while loading or streaming
+  const showThinking = isLoading || isStreaming
+
   return (
     <div className="flex h-full flex-col">
       {/* Chat area */}
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !showThinking ? (
           /* Empty state */
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
             <div className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.06]">
@@ -732,7 +814,7 @@ function AiChatTab({ projectId }: { projectId: string }) {
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm font-medium leading-relaxed whitespace-pre-wrap ${
+                  className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm font-medium leading-relaxed ${
                     msg.role === "user"
                       ? "rounded-br-md border-2 border-[var(--accent-primary)]/50 bg-[var(--accent-primary-dim)] text-foreground"
                       : "rounded-bl-md border border-white/[0.08] bg-white/[0.04] text-secondary-foreground"
@@ -743,20 +825,46 @@ function AiChatTab({ projectId }: { projectId: string }) {
                       KubeAI
                     </p>
                   )}
-                  {msg.content}
+                  <div className="whitespace-pre-wrap leading-relaxed">
+                    {renderFormattedText(msg.content)}
+                  </div>
                 </div>
               </div>
             ))}
-            {isLoading && (
+
+            {/* Streaming response — tokens appearing in realtime */}
+            {isStreaming && streamingText && (
               <div className="flex justify-start">
-                <div className="rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.04] px-3 py-2">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--accent-primary)]" />
-                    Thinking
-                  </span>
+                <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm font-medium text-secondary-foreground">
+                  <p className="mb-0.5 text-[10px] font-semibold text-muted-foreground">
+                    KubeAI
+                  </p>
+                  <div className="whitespace-pre-wrap leading-relaxed">
+                    {renderFormattedText(streamingText)}
+                  </div>
                 </div>
               </div>
             )}
+
+            {/* Thinking indicator — spiral spinner while waiting for first token */}
+            {isLoading && !isStreaming && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.04] px-3 py-3">
+                  <div className="flex items-center gap-3">
+                    <SpiralSpinner className="size-8 shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-foreground">
+                        Thinking
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        Reading your canvas...
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div ref={chatEndRef} />
           </div>
         )}
@@ -784,14 +892,24 @@ function AiChatTab({ projectId }: { projectId: string }) {
             disabled={isLoading}
             className="min-h-[72px] max-h-[160px] flex-1 resize-none border-0 bg-transparent p-0 text-sm font-medium text-foreground placeholder:text-muted-foreground focus-visible:border-0 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
           />
-          <Button
-            size="icon-sm"
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading}
-            className="shrink-0 cursor-pointer rounded-xl bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/80 disabled:opacity-40"
-          >
-            <Send className="size-4" />
-          </Button>
+          {isLoading ? (
+            <Button
+              size="icon-sm"
+              onClick={handleStop}
+              className="shrink-0 cursor-pointer rounded-xl bg-[var(--state-error)] text-white hover:bg-[var(--state-error)]/80"
+            >
+              <Square className="size-3.5" fill="currentColor" />
+            </Button>
+          ) : (
+            <Button
+              size="icon-sm"
+              onClick={handleSend}
+              disabled={!input.trim()}
+              className="shrink-0 cursor-pointer rounded-xl bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/80 disabled:opacity-40"
+            >
+              <Send className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

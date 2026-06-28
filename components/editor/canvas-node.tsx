@@ -4,6 +4,7 @@ import type { CanvasNode, NodeColor } from "@/types/canvas";
 import { NODE_COLORS, DEFAULT_NODE_COLOR, textColorForBg } from "@/types/canvas";
 import type { NodeShape } from "@/types/canvas";
 import { ColorToolbar } from "@/components/editor/color-toolbar";
+import StackIcon from "tech-stack-icons";
 
 // ── Border config ─────────────────────────────────────────────────────
 const BORDER_REST = "border-white/[0.12]";
@@ -168,12 +169,14 @@ const MIN_WIDTH = 60;
 const MIN_HEIGHT = 40;
 
 function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
-  const { label, color, shape } = data;
+  const { label, color, shape, logo } = data;
   const fill = color || DEFAULT_NODE_COLOR.bg;
   const shapeType: NodeShape = (shape as NodeShape) || "rectangle";
   const nodeTextColor: string =
     (data.textColor as string) || textColorForBg(fill);
   const { updateNode } = useReactFlow();
+  const logoName = (logo as string) || null;
+  const logoCustomSvg = (data.logoCustomSvg as string) || null;
 
   // ── Label editing state ──────────────────────────────────────────
   const [editing, setEditing] = useState(false);
@@ -253,7 +256,7 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
       {/* Shape background */}
       <ShapeRenderer shape={shapeType} fill={fill} selected={!!selected} />
 
-      {/* Label — centered, editable on double-click */}
+      {/* Label + optional logo — centered, editable on double-click */}
       {editing ? (
         <div
           className="absolute inset-0 flex items-center justify-center z-10 pointer-events-auto"
@@ -286,9 +289,24 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
         </div>
       ) : (
         <div
-          className="absolute inset-0 flex items-center justify-center cursor-text"
+          className="absolute inset-0 flex flex-col items-center justify-center cursor-text gap-1"
           onDoubleClick={handleDoubleClick}
         >
+          {/* Logo icon (when present) */}
+          {logoCustomSvg ? (
+            <div
+              className="pointer-events-none flex-shrink-0 h-7 w-7 [&_svg]:h-full [&_svg]:w-full"
+              dangerouslySetInnerHTML={{ __html: logoCustomSvg }}
+            />
+          ) : logoName ? (
+            <div className="pointer-events-none flex-shrink-0">
+              <StackIcon
+                name={logoName as any}
+                variant="dark"
+                className="h-7 w-7"
+              />
+            </div>
+          ) : null}
           {label ? (
             <span
               className="text-sm font-medium px-2 truncate max-w-full pointer-events-none"
