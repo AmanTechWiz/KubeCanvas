@@ -20,6 +20,7 @@ import { EditorContext } from "@/hooks/use-editor-context"
 import { ShareDialog } from "@/components/editor/share-dialog"
 import { ShapeDragPreview } from "@/components/editor/shape-drag-preview"
 import { CanvasEditor } from "./canvas-editor"
+import { AiSidebar } from "@/components/editor/ai-sidebar"
 import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal"
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
 import type { SaveStatus } from "@/hooks/use-autosave"
@@ -51,53 +52,10 @@ export function WorkspaceShell({
   const [starterTemplatesOpen, setStarterTemplatesOpen] = useState(false)
   const [pendingTemplate, setPendingTemplate] = useState<CanvasTemplate | null>(null)
   const [saveApi, setSaveApi] = useState<{ manualSave: () => void; status: SaveStatus } | null>(null)
-  const accessCheckRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const checkAccessRef = useRef<(() => Promise<void>) | null>(null)
-
-  // Poll access every 5s + on tab focus — reload if revoked
-  useEffect(() => {
-    let cancelled = false
-
-    const checkAccess = async () => {
-      try {
-        const res = await fetch(`/api/projects/${projectId}/access`)
-        if (res.ok) {
-          const data = await res.json()
-          if (!data.hasAccess && !cancelled) {
-            window.location.reload()
-          }
-        }
-      } catch {
-        // Network error — skip this check cycle
-      }
-    }
-
-    checkAccessRef.current = checkAccess
-
-    // Poll every 5 seconds
-    accessCheckRef.current = setInterval(checkAccess, 30_000)
-
-    // Also check when the tab regains focus
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        checkAccess()
-      }
-    }
-    document.addEventListener("visibilitychange", onVisibilityChange)
-
-    return () => {
-      cancelled = true
-      if (accessCheckRef.current) clearInterval(accessCheckRef.current)
-      document.removeEventListener("visibilitychange", onVisibilityChange)
-    }
-  }, [projectId])
 
   // Immediate check when share dialog closes — owner may have just revoked access
   const handleShareOpenChange = useCallback((open: boolean) => {
     setShareOpen(open)
-    if (!open && checkAccessRef.current) {
-      checkAccessRef.current()
-    }
   }, [])
 
   const {
@@ -184,10 +142,7 @@ export function WorkspaceShell({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setShareOpen(true)
-                  if (checkAccessRef.current) checkAccessRef.current()
-                }}
+                onClick={() => setShareOpen(true)}
                 className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 <Share2 className="h-4 w-4" />
@@ -196,6 +151,8 @@ export function WorkspaceShell({
             </div>
           </div>
         </div>
+
+
 
         {/* Floating AI toggle — bottom-right */}
         {!aiSidebarOpen && (
@@ -238,13 +195,20 @@ export function WorkspaceShell({
               pendingTemplate={pendingTemplate}
               onTemplateImported={() => setPendingTemplate(null)}
               currentUserId={currentUserId}
-              aiSidebarOpen={aiSidebarOpen}
-              onAiSidebarClose={() => setAiSidebarOpen(false)}
               onSaveApi={setSaveApi}
+              aiSidebarOpen={aiSidebarOpen}
             />
             <ShapeDragPreview />
           </div>
         </div>
+
+        {/* AI sidebar — placeholder, no LLM calls */}
+        <AiSidebar
+          isOpen={aiSidebarOpen}
+          onClose={() => setAiSidebarOpen(false)}
+          projectId={projectId}
+          currentUserId={currentUserId}
+        />
 
         {/* Project dialogs */}
         <CreateProjectDialog

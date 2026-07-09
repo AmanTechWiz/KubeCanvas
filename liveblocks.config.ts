@@ -10,17 +10,23 @@ declare global {
     Presence: {
       // Real-time cursor coordinates
       cursor: { x: number; y: number } | null;
-      // Whether the user is in an AI-thinking state
-      isThinking: boolean;
-      // AI agent cursor position (canvas coordinates) — separate from
-      // user cursor so the agent can move independently on the canvas.
+      // AI agent cursor position (set via Liveblocks REST API)
       agentCursor: { x: number; y: number } | null;
+      // Whether the AI agent is currently thinking/generating
+      isThinking: boolean;
     };
 
     // The Storage tree for the room, for useMutation, useStorage, etc.
     Storage: {
       // Liveblocks-backed React Flow canvas
       flow: LiveblocksFlow<CanvasNode, CanvasEdge>;
+      // AI agent cursor position (set by the backend design agent)
+      agentCursor: {
+        x: number;
+        y: number;
+      } | null;
+      // Whether the AI agent is currently thinking/generating
+      agentThinking: boolean;
     };
 
     // Custom user info set when authenticating with a secret key
@@ -41,17 +47,6 @@ declare global {
 
     // Custom room info set with resolveRoomsInfo, for useRoomInfo
     RoomInfo: {};
-
-    // Feed metadata type for useFeeds
-    FeedMetadata: {
-      name?: string;
-    };
-
-    // Feed message data type for useFeedMessages
-    // Discriminated union: "status" for AI activity, "chat" for sidebar chat
-    FeedMessageData:
-      | { kind: "status"; status: "thinking" | "analyzing" | "generating" | "complete" | "failed" | "idle"; text?: string }
-      | { kind: "chat"; id: string; sender: string; role: "user" | "assistant"; content: string; timestamp: number };
   }
 }
 

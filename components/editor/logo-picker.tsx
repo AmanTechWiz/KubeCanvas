@@ -125,6 +125,20 @@ export function LogoPicker({ isOpen, onClose, onAddLogo }: LogoPickerProps) {
     [search, filteredCategories, handleLogoClick],
   );
 
+  // Close on outside click (replaces backdrop to avoid blocking drag-and-drop)
+  const outsideClickRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: MouseEvent) => {
+      if (outsideClickRef.current && !outsideClickRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    // Use mousedown so it fires before dragstart
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [isOpen, onClose])
+
   if (!isOpen) return null;
 
   const iconsToShow = search.trim()
@@ -133,15 +147,9 @@ export function LogoPicker({ isOpen, onClose, onAddLogo }: LogoPickerProps) {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Panel — no backdrop so drag-and-drop reaches the canvas */}
       <div
-        className="fixed inset-0 z-[99]"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div
-        ref={panelRef}
+        ref={outsideClickRef}
         className="absolute bottom-16 left-1/2 z-[100] w-[420px] max-w-[calc(100vw-2rem)] -translate-x-1/2 pointer-events-auto"
       >
         <div className="rounded-2xl border border-white/[0.08] bg-[#111114] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_4px_40px_rgba(0,0,0,0.6),inset_0_0.5px_0_rgba(255,255,255,0.06)] overflow-hidden">

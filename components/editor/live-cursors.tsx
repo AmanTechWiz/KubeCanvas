@@ -2,7 +2,6 @@
 
 import { useMemo } from "react"
 import { useOthers } from "@liveblocks/react"
-import { Loader2 } from "lucide-react"
 import { getUserColor } from "@/lib/liveblocks"
 
 /** Returns "#fff" or "#111" depending on the perceived luminance of a hex color. */
@@ -71,7 +70,6 @@ export function LiveCursors({ currentUserId, viewport }: LiveCursorsProps) {
           textColor,
           name,
           initials,
-          isThinking: other.presence.isThinking,
         }
       })
   }, [others, viewport])
@@ -114,12 +112,6 @@ export function LiveCursors({ currentUserId, viewport }: LiveCursorsProps) {
             style={{ backgroundColor: c.color, color: c.textColor }}
           >
             {c.name}
-            {c.isThinking && (
-              <Loader2
-                className="size-2.5 animate-spin"
-                style={{ color: c.textColor }}
-              />
-            )}
           </div>
         </div>
       ))}

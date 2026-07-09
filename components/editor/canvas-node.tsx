@@ -1,10 +1,60 @@
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState, Component } from "react";
 import { Handle, Position, NodeResizer, useReactFlow, type NodeProps } from "@xyflow/react";
 import type { CanvasNode, NodeColor } from "@/types/canvas";
 import { NODE_COLORS, DEFAULT_NODE_COLOR, textColorForBg } from "@/types/canvas";
 import type { NodeShape } from "@/types/canvas";
 import { ColorToolbar } from "@/components/editor/color-toolbar";
 import StackIcon from "tech-stack-icons";
+import { LOGO_CATEGORIES } from "@/lib/logo-data";
+
+// ── Error Boundary for invalid StackIcon logos ──────────────────────
+interface IconFallbackProps {
+  label: string | undefined;
+  nodeTextColor: string;
+}
+
+function IconFallback({ label, nodeTextColor }: IconFallbackProps) {
+  return (
+    <div
+      className="flex items-center justify-center h-7 w-7 rounded bg-white/[0.08] text-[10px] font-semibold"
+      style={{ color: nodeTextColor }}
+    >
+      {label ? label.charAt(0).toUpperCase() : "?"}
+    </div>
+  );
+}
+
+interface IconBoundaryState {
+  hasError: boolean;
+}
+
+class IconBoundary extends Component<
+  React.PropsWithChildren<IconFallbackProps>,
+  IconBoundaryState
+> {
+  state: IconBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): IconBoundaryState {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <IconFallback label={this.props.label} nodeTextColor={this.props.nodeTextColor} />;
+    }
+    return this.props.children;
+  }
+}
+
+// Build a lookup map for logo custom SVGs (icons not in tech-stack-icons)
+const LOGO_CUSTOM_SVG_MAP: Record<string, string> = {};
+for (const cat of LOGO_CATEGORIES) {
+  for (const icon of cat.icons) {
+    if (icon.customSvg) {
+      LOGO_CUSTOM_SVG_MAP[icon.id] = icon.customSvg;
+    }
+  }
+}
 
 // ── Border config ─────────────────────────────────────────────────────
 const BORDER_REST = "border-white/[0.12]";
@@ -18,15 +68,6 @@ function RectangleShape({ fill, selected }: { fill: string; selected: boolean })
       className={`absolute inset-0 rounded-lg border overflow-hidden ${selected ? BORDER_SELECTED : BORDER_REST}`}
       style={{ background: fill }}
     />
-  );
-}
-
-function PillShape({ fill, selected }: { fill: string; selected: boolean }) {
-  return (
-    <div
-      className={`absolute inset-0 rounded-[9999px] border overflow-hidden ${selected ? BORDER_SELECTED : BORDER_REST}`}
-      style={{ background: fill }}
-     />
   );
 }
 
@@ -118,7 +159,6 @@ function CylinderShape({ fill, selected }: { fill: string; selected: boolean }) 
 
 const CSS_SHAPES: Record<string, React.ComponentType<{ fill: string; selected: boolean }>> = {
   rectangle: RectangleShape,
-  pill: PillShape,
 };
 
 const SVG_SHAPES: Record<string, React.ComponentType<{ fill: string; selected: boolean }>> = {
@@ -157,7 +197,7 @@ function NodeHandle({
     <Handle
       type={type}
       position={position}
-      id={`${position}-${type}`}
+      id={position}
       className="!w-3 !h-3 !bg-white/80 !border-2 !border-white/30 !rounded-full !-translate-x-1/2 !-translate-y-1/2 opacity-0 group-hover/node:opacity-100 transition-all duration-150 hover:!opacity-100 hover:!scale-150 hover:!bg-white hover:!shadow-[0_0_8px_rgba(255,255,255,0.5)]"
       style={{ zIndex: 10 }}
     />
@@ -235,7 +275,7 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
         isVisible={!!selected}
         minWidth={MIN_WIDTH}
         minHeight={MIN_HEIGHT}
-        keepAspectRatio={shapeType === "circle"}
+        keepAspectRatio={false}
         handleClassName="!w-2.5 !h-2.5 !rounded-full !bg-white/60 !border-0 hover:!bg-white hover:!shadow-[0_0_6px_rgba(255,255,255,0.4)] transition-all duration-150"
         lineClassName="!border-white/30"
         autoScale={false}
@@ -293,18 +333,20 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           onDoubleClick={handleDoubleClick}
         >
           {/* Logo icon (when present) */}
-          {logoCustomSvg ? (
+          {(logoCustomSvg || (logoName && LOGO_CUSTOM_SVG_MAP[logoName])) ? (
             <div
               className="pointer-events-none flex-shrink-0 h-7 w-7 [&_svg]:h-full [&_svg]:w-full"
-              dangerouslySetInnerHTML={{ __html: logoCustomSvg }}
+              dangerouslySetInnerHTML={{ __html: logoCustomSvg || LOGO_CUSTOM_SVG_MAP[logoName!] }}
             />
           ) : logoName ? (
             <div className="pointer-events-none flex-shrink-0">
-              <StackIcon
-                name={logoName as any}
-                variant="dark"
-                className="h-7 w-7"
-              />
+              <IconBoundary label={label} nodeTextColor={nodeTextColor}>
+                <StackIcon
+                  name={logoName as any}
+                  variant="dark"
+                  className="h-7 w-7"
+                />
+              </IconBoundary>
             </div>
           ) : null}
           {label ? (

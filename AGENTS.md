@@ -29,6 +29,8 @@ If implementation changes the architecture, scope, or standards documented in th
 
 after implementing or updating features or whatever asked , give a short summary in bullet points of the actions taken and what's new in clear language.
 
+After fixing any issue from 'known-issues.md' file -> keep the current issue part empty , when to stop untouched. no need to add fixed issue or anything.
+
 <!-- TRIGGER.DEV basic START -->
 # Trigger.dev Basic Tasks (v4)
 
@@ -1461,3 +1463,9 @@ Key properties available in run subscriptions:
 - **Cleanup subscriptions**: Backend subscriptions auto-complete, frontend hooks auto-cleanup
 
 <!-- TRIGGER.DEV realtime END -->
+
+<!-- TRIGGER.DEV SKILLS START -->
+## Trigger.dev agent skills
+
+This project has Trigger.dev agent skills installed in `.agents/skills/`. Before writing or changing Trigger.dev code (background tasks, scheduled tasks, realtime, or chat.agent AI agents), load the most relevant skill: `trigger-authoring-tasks`, `trigger-chat-agent-advanced`, `trigger-cost-savings`, `trigger-getting-started`, `trigger-realtime-and-frontend`.
+<!-- TRIGGER.DEV SKILLS END -->

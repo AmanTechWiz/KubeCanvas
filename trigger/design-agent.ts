@@ -1,515 +1,442 @@
-import { task, logger, metadata } from "@trigger.dev/sdk";
-import { generateText, tool, stepCountIs } from "ai";
+import { task, metadata } from "@trigger.dev/sdk";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { z } from "zod";
+import { generateObject } from "ai";
 import { Liveblocks } from "@liveblocks/node";
 import { mutateFlow } from "@liveblocks/react-flow/node";
-import { SYSTEM_PROMPT } from "./ai_system_prompt";
 import {
-  NODE_COLORS,
-  DEFAULT_NODE_COLOR,
-  textColorForBg,
-  type NodeShape,
-} from "../types/canvas";
+  ArchitectureSchema,
+  type Architecture,
+  type ArchitectureNode,
+  type ArchitectureEdge,
+} from "@/lib/architecture-schema";
+import { layoutArchitecture } from "@/lib/layout-architecture";
+import {
+  validateArchitecture,
+  deduplicateNodes,
+  repairOrphans,
+} from "@/lib/validate-architecture";
+import { LOGO_CATEGORIES } from "@/lib/logo-data";
 
 // ── Clients ─────────────────────────────────────────────────────────
-
-const liveblocks = new Liveblocks({
-  secret: process.env.LIVEBLOCKS_SECRET_KEY!,
-});
-
-// ── Constants ───────────────────────────────────────────────────────
-
-const LIVEBLOCKS_API = "https://api.liveblocks.io/v2";
-const AI_AGENT_ID = "ai-agent";
-const GEMINI_MODEL = process.env.GEMINI_MODEL!;
-const FLOWCHART_STORAGE_KEY = "flow";
-
-// ── Gemini Provider ─────────────────────────────────────────────────
 
 const googleProvider = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_AI__API_KEY!,
 });
 
-// ── Shared Zod Schemas ──────────────────────────────────────────────
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
-const BLOCK_SHAPES: NodeShape[] = ["rectangle", "diamond", "circle", "pill", "cylinder", "hexagon"];
+const liveblocks = new Liveblocks({
+  secret: process.env.LIVEBLOCKS_SECRET_KEY!,
+});
 
-const BLOCK_COLORS = Object.fromEntries(
-  NODE_COLORS.map((c) => [c.label.toLowerCase(), c])
-) as Record<string, (typeof NODE_COLORS)[number]>;
+// ── Color Map ───────────────────────────────────────────────────────
 
-const pointSchema = z.object({ x: z.number(), y: z.number() });
-const sizeSchema = z.number().min(60).max(400);
+const COLOR_MAP: Record<string, { bg: string; text: string }> = {
+  neutral: { bg: "#1F1F1F", text: "#EDEDED" },
+  blue: { bg: "#10233D", text: "#52A8FF" },
+  purple: { bg: "#2E1938", text: "#9500ff" },
+  orange: { bg: "#331B00", text: "#FF990A" },
+  red: { bg: "#3C1618", text: "#FF6166" },
+  pink: { bg: "#3A1726", text: "#ff2e70" },
+  green: { bg: "#0F2E18", text: "#62C073" },
+  teal: { bg: "#062822", text: "#0AC7B4" },
+};
 
-// ── Presence Helpers ────────────────────────────────────────────────
+// ── Valid Logo Set ──────────────────────────────────────────────────
+// Pre-built from LOGO_CATEGORIES so we can strip invalid logos
+// returned by the LLM before they reach the canvas.
+const VALID_LOGOS = new Set<string>();
+for (const cat of LOGO_CATEGORIES) {
+  for (const icon of cat.icons) {
+    VALID_LOGOS.add(icon.id);
+  }
+}
+VALID_LOGOS.add("kong"); // explicit allow for Kong API Gateway
 
-let lastCursor: { x: number; y: number } | null = null;
-let lastThinking: boolean = true;
-
-function liveblocksHeaders(): Record<string, string> {
+function stripInvalidLogos(arch: Architecture): Architecture {
   return {
-    Authorization: `Bearer ${process.env.LIVEBLOCKS_SECRET_KEY!}`,
-    "Content-Type": "application/json",
+    ...arch,
+    nodes: arch.nodes.map((n) => {
+      if (n.logo && !VALID_LOGOS.has(n.logo)) {
+        console.warn(`[Design Agent] Stripping invalid logo "${n.logo}" from node "${n.label}"`);
+        return { ...n, logo: null };
+      }
+      return n;
+    }),
   };
 }
 
-async function setPresence(
-  roomId: string,
-  data: { agentCursor?: { x: number; y: number } | null; isThinking?: boolean },
-  ttl: number = 300,
-) {
-  try {
-    await fetch(`${LIVEBLOCKS_API}/rooms/${roomId}/presence`, {
-      method: "POST",
-      headers: liveblocksHeaders(),
-      body: JSON.stringify({
-        userId: AI_AGENT_ID,
-        data: {
-          agentCursor: data.agentCursor ?? lastCursor,
-          isThinking: data.isThinking ?? lastThinking,
-          cursor: null,
-        },
-        userInfo: { name: "KubeAI", color: "#6457f9" },
-        ttl,
-      }),
-    });
-    if (data.agentCursor !== undefined) lastCursor = data.agentCursor ?? lastCursor;
-    if (data.isThinking !== undefined) lastThinking = data.isThinking ?? lastThinking;
-  } catch {
-    // Presence failures are non-fatal
-  }
+// ── Prompts ─────────────────────────────────────────────────────────
+
+const FRESH_PROMPT = `You are a senior software architect designing a production system.
+
+OUTPUT RULES:
+- Output the full architecture as a single JSON object matching the schema.
+- Every node MUST have at least one edge (no orphaned nodes).
+- Use specific, real technologies: "PostgreSQL 15" not "Database", "Redis 7" not "Cache".
+- Every node's description must be one sentence explaining its role.
+- Edge labels must be SHORT verbs: "Routes", "Queries", "Publishes", "Writes", "Authenticates". Max 20 chars.
+- Color meanings: neutral=generic, blue=core APIs, purple=AI/ML, orange=cache/queue, red=critical, pink=auth/security, green=databases, teal=external.
+- Shape meanings: rectangle=general, diamond=routing/decisions, circle=triggers/entry, cylinder=storage, hexagon=external.
+- For well-known technologies (PostgreSQL, Redis, Docker, Kubernetes, React, Next.js, etc.), set the logo field to the tech-stack-icons icon name (e.g. "postgresql", "redis", "docker"). Set to null for generic components.
+- Complexity: 8-15 nodes for simple, 15-25 for standard, 25-40 for complex/production.
+- Do NOT over-engineer simple requests. A blog doesn't need Kafka and Elasticsearch.
+- Do NOT under-engineer complex requests. A production e-commerce platform needs proper infrastructure.
+- NEVER output coordinates, sizes, or handle positions — the layout engine computes those.
+
+NAMING: Avoid "Service A", "Backend Service". Prefer "Payment Orchestrator", "Fraud Engine", "Feed Generator".
+
+NEVER output code, scripts, configuration, or terraform. This is a diagram-only tool.`;
+
+const MODIFY_PROMPT = `You are a senior software architect modifying an existing architecture.
+
+The user has an existing canvas with components already placed. They want to make a change.
+
+CURRENT CANVAS STATE:
+{currentCanvas}
+
+RULES FOR MODIFICATION:
+- Output the COMPLETE target architecture — all nodes and edges that should exist after your change.
+- PRESERVE all existing components unless the user explicitly asks to remove them.
+- When adding a component, also add edges connecting it to the existing architecture.
+- When the user says "add X", add the component and connect it appropriately. Do NOT recreate existing components.
+- When the user says "remove X", remove that component and its edges from the target.
+- When the user says "change X to Y", update that component's properties.
+- Use the same IDs as the existing components when preserving them.
+- New component IDs should follow the same kebab-case convention.
+
+OUTPUT RULES:
+- Output the full architecture as a single JSON object matching the schema.
+- Every node MUST have at least one edge (no orphaned nodes).
+- Use specific, real technologies: "PostgreSQL 15" not "Database", "Redis 7" not "Cache".
+- Edge labels must be SHORT verbs: "Routes", "Queries", "Publishes", "Writes". Max 20 chars.
+- Color meanings: neutral=generic, blue=core APIs, purple=AI/ML, orange=cache/queue, red=critical, pink=auth/security, green=databases, teal=external.
+- Shape meanings: rectangle=general, diamond=routing/decisions, circle=triggers/entry, cylinder=storage, hexagon=external.
+- For well-known technologies, set the logo field. Set to null for generic components.
+- NEVER output coordinates, sizes, or handle positions.
+
+NEVER output code, scripts, configuration, or terraform.`;
+
+// ── Diff Computation ────────────────────────────────────────────────
+
+interface ArchitectureDiff {
+  addNodes: ArchitectureNode[];
+  addEdges: ArchitectureEdge[];
+  removeNodeIds: string[];
+  removeEdgeIds: string[];
+  updateNodes: Array<{ id: string; changes: Partial<ArchitectureNode> }>;
+  updateEdges: Array<{ id: string; changes: Partial<ArchitectureEdge> }>;
 }
 
-function pause(ms = 80) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+function computeDiff(
+  current: { nodes: Array<{ id: string; label: string; shape: string; color: string; logo: string | null }>; edges: Array<{ id: string; source: string; target: string; label: string | null }> },
+  target: Architecture,
+): ArchitectureDiff {
+  const currentNodeIds = new Set(current.nodes.map((n) => n.id));
+  const targetNodeIds = new Set(target.nodes.map((n) => n.id));
+  const currentEdgeIds = new Set(current.edges.map((e) => e.id));
+  const targetEdgeIds = new Set(target.edges.map((e) => e.id));
 
-// ── Cursor Animation ──────────────────────────────────────────────
-// Smooth cursor movement from current position to destination.
-// Sends interpolated positions at ~70ms intervals so the frontend
-// CSS transition (200ms ease-out) can chain them into a fluid path.
+  // Nodes to add (in target but not current)
+  const addNodes = target.nodes.filter((n) => !currentNodeIds.has(n.id));
 
-async function animateCursor(
-  roomId: string,
-  toX: number,
-  toY: number,
-  opts?: { steps?: number; stepMs?: number }
-) {
-  const steps = opts?.steps ?? 10;
-  const stepMs = opts?.stepMs ?? 70;
-  const fromX = lastCursor?.x ?? 0;
-  const fromY = lastCursor?.y ?? 0;
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    // Ease-out cubic for natural deceleration
-    const ease = 1 - Math.pow(1 - t, 3);
-    const cx = fromX + (toX - fromX) * ease;
-    const cy = fromY + (toY - fromY) * ease;
-    await setPresence(roomId, { agentCursor: { x: cx, y: cy }, isThinking: false });
-    await pause(stepMs);
-  }
-}
+  // Nodes to remove (in current but not target)
+  const removeNodeIds = current.nodes
+    .filter((n) => !targetNodeIds.has(n.id))
+    .map((n) => n.id);
 
-// ── Room Helpers ───────────────────────────────────────────────────
+  // Nodes to update (in both, but data changed)
+  const updateNodes: ArchitectureDiff["updateNodes"] = [];
+  for (const targetNode of target.nodes) {
+    const currentNode = current.nodes.find((n) => n.id === targetNode.id);
+    if (!currentNode) continue;
 
-async function ensureRoomExists(roomId: string): Promise<void> {
-  try {
-    await liveblocks.getOrCreateRoom(roomId, {
-      defaultAccesses: [],
-    });
-    logger.info("Liveblocks room ensured", { roomId });
-  } catch (err) {
-    logger.error("Failed to ensure Liveblocks room", { roomId, error: String(err) });
-    throw new Error(`Could not create/access Liveblocks room "${roomId}": ${String(err)}`);
-  }
-}
+    const changes: Partial<ArchitectureNode> = {};
+    if (currentNode.label !== targetNode.label) changes.label = targetNode.label;
+    if (currentNode.shape !== targetNode.shape) changes.shape = targetNode.shape;
+    if (currentNode.color !== targetNode.color) changes.color = targetNode.color;
+    if (currentNode.logo !== targetNode.logo) changes.logo = targetNode.logo;
 
-// ── Main Task ──────────────────────────────────────────────────────
-
-export const designTask = task({
-  id: "design-agent",
-  maxDuration: 300,
-  run: async (payload: { prompt: string; roomId: string; projectId: string; history?: Array<{ role: string; content: string }> }) => {
-    const { prompt, roomId, history } = payload;
-
-    logger.info("Design task started", { prompt, roomId });
-
-    await ensureRoomExists(roomId);
-    await setPresence(roomId, { isThinking: true, agentCursor: null }, 300);
-
-    try {
-      metadata.set("phase", "reading");
-
-      // Queue for serializing tool executions (prevents concurrent writes)
-      let queue: Promise<unknown> = Promise.resolve();
-      const serial = <T>(fn: () => Promise<T>): Promise<T> => {
-        const run = queue.then(() => fn());
-        queue = run.then(() => undefined, () => undefined);
-        return run;
-      };
-
-      let agentText = "";
-
-      await mutateFlow(
-        {
-          client: liveblocks,
-          roomId,
-          storageKey: FLOWCHART_STORAGE_KEY,
-        },
-        async (flow) => {
-          // Read current canvas state for the AI
-          const canvasJson = JSON.stringify(flow, null, 2);
-
-          // Build conversation history context for the AI
-          let historyContext = "";
-          if (history && history.length > 0) {
-            const recentHistory = history.slice(-20);
-            historyContext = recentHistory
-              .map((m) => `[${m.role === "user" ? "User" : "KubeAI"}]: ${m.content}`)
-              .join("\n");
-          }
-
-          metadata.set("phase", "generating");
-
-          // Move cursor to a random starting position while thinking
-          const allNodes = [...flow.nodes.values()];
-          const bounds = allNodes.length > 0
-            ? {
-                minX: Math.min(...allNodes.map((n: any) => (n.position?.x ?? 0) - 100)),
-                minY: Math.min(...allNodes.map((n: any) => (n.position?.y ?? 0) - 100)),
-                maxX: Math.max(...allNodes.map((n: any) => (n.position?.x ?? 0) + 300)),
-                maxY: Math.max(...allNodes.map((n: any) => (n.position?.y ?? 0) + 200)),
-              }
-            : { minX: -200, minY: -200, maxX: 200, maxY: 200 };
-
-          // Thinking cursor — drifts incrementally to random nearby points
-          const thinkingTarget = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
-          let thinkingStep = 0;
-          const thinkingSteps = 10;
-          const thinkingInterval = setInterval(() => {
-            // Every 10 steps, pick a new random target
-            if (thinkingStep % thinkingSteps === 0) {
-              thinkingTarget.x = bounds.minX + Math.random() * (bounds.maxX - bounds.minX);
-              thinkingTarget.y = bounds.minY + Math.random() * (bounds.maxY - bounds.minY);
-            }
-            // Move a small fraction toward the target
-            const from = lastCursor ?? { x: thinkingTarget.x, y: thinkingTarget.y };
-            const t = 0.15;
-            const nx = from.x + (thinkingTarget.x - from.x) * t;
-            const ny = from.y + (thinkingTarget.y - from.y) * t;
-            void setPresence(roomId, { agentCursor: { x: nx, y: ny } });
-            thinkingStep++;
-          }, 1000);
-
-          try {
-            const result = await generateText({
-              model: googleProvider(GEMINI_MODEL),
-              system: SYSTEM_PROMPT,
-              prompt: `${historyContext ? `<conversation-history>\n${historyContext}\n</conversation-history>\n\n` : ""}<current-canvas>\n${canvasJson}\n</current-canvas>\n\n<user-message>\n${prompt}\n</user-message>`,
-              tools: {
-                addNode: tool({
-                  description: "Create a new node on the canvas. IMPORTANT: Always set width based on label length — short labels (≤10 chars) use 160-200, medium labels (11-20 chars) use 240-300, long labels (21+ chars) use 320-380. Height should be 100-140. Diamond and circle shapes use equal width/height.",
-                  inputSchema: z.object({
-                    id: z.string().describe("Unique node ID (e.g. 'node-1')"),
-                    label: z.string().describe("Human-readable label"),
-                    shape: z.enum(BLOCK_SHAPES),
-                    color: z.string().describe("Background hex color from the palette"),
-                    x: z.number().describe("X position on canvas — align with grid, no overlaps"),
-                    y: z.number().describe("Y position on canvas — align with grid layer"),
-                    width: sizeSchema.optional().default(192),
-                    height: sizeSchema.optional().default(128),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    const w = input.width ?? 192;
-                    const h = input.height ?? 128;
-
-                    // Animate cursor to node center
-                    await animateCursor(roomId, input.x + w / 2, input.y + h / 2);
-
-                    if (flow.getNode(input.id)) {
-                      return { ok: false, reason: "ID already exists", id: input.id };
-                    }
-
-                    const textColor = textColorForBg(input.color);
-                    flow.addNode({
-                      id: input.id,
-                      type: "canvasNode",
-                      position: { x: input.x, y: input.y },
-                      width: w,
-                      height: h,
-                      data: {
-                        label: input.label,
-                        color: input.color,
-                        textColor,
-                        shape: input.shape,
-                      },
-                    } as any);
-
-                    await pause();
-                    return { ok: true, id: input.id };
-                  }),
-                }),
-
-                moveNode: tool({
-                  description: "Move a node to a new position.",
-                  inputSchema: z.object({
-                    id: z.string(),
-                    x: z.number(),
-                    y: z.number(),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    const node = flow.getNode(input.id);
-                    if (!node) return { ok: false, reason: "Node not found", id: input.id };
-
-                    const fromX = (node.position as any)?.x ?? 0;
-                    const fromY = (node.position as any)?.y ?? 0;
-
-                    // Smoothly animate cursor from current to source node
-                    await animateCursor(roomId, fromX + 50, fromY + 50);
-                    // Then smoothly animate to destination
-                    await animateCursor(roomId, input.x + 50, input.y + 50);
-
-                    flow.updateNode(input.id, { position: { x: input.x, y: input.y } });
-                    await pause();
-                    return { ok: true, id: input.id };
-                  }),
-                }),
-
-                updateNode: tool({
-                  description: "Update a node's label, shape, or color.",
-                  inputSchema: z.object({
-                    id: z.string(),
-                    label: z.string().optional(),
-                    shape: z.enum(BLOCK_SHAPES).optional(),
-                    color: z.string().optional(),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    const node = flow.getNode(input.id);
-                    if (!node) return { ok: false, reason: "Node not found", id: input.id };
-
-                    const pos = (node.position as any) ?? { x: 0, y: 0 };
-                    await animateCursor(roomId, pos.x + 50, pos.y + 50);
-
-                    const updates: Record<string, any> = {};
-                    if (input.label !== undefined) updates.label = input.label;
-                    if (input.shape !== undefined) updates.shape = input.shape;
-                    if (input.color !== undefined) {
-                      updates.color = input.color;
-                      updates.textColor = textColorForBg(input.color);
-                    }
-
-                    if (Object.keys(updates).length > 0) {
-                      // Update node data — need to merge with existing data
-                      const nodeData = (node as any).data ?? {};
-                      flow.updateNodeData(input.id, { ...nodeData, ...updates });
-                    }
-
-                    await pause();
-                    return { ok: true, id: input.id };
-                  }),
-                }),
-
-                deleteNode: tool({
-                  description: "Delete a node and its connected edges.",
-                  inputSchema: z.object({
-                    id: z.string(),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    const node = flow.getNode(input.id);
-                    if (!node) return { ok: false, reason: "Node not found", id: input.id };
-
-                    const pos = (node.position as any) ?? { x: 0, y: 0 };
-                    await animateCursor(roomId, pos.x + 50, pos.y + 50);
-
-                    // Remove connected edges first
-                    const edgesToRemove: string[] = [];
-                    flow.edges.forEach((edge: any) => {
-                      if (edge.source === input.id || edge.target === input.id) {
-                        edgesToRemove.push(edge.id);
-                      }
-                    });
-                    for (const edgeId of edgesToRemove) {
-                      flow.removeEdge(edgeId);
-                      await pause(30);
-                    }
-
-                    flow.removeNode(input.id);
-                    await pause();
-                    return { ok: true, id: input.id, edgesRemoved: edgesToRemove.length };
-                  }),
-                }),
-
-                deleteAllNodes: tool({
-                  description: "Delete ALL nodes and edges from the canvas. Use when the user asks to clear or reset the canvas.",
-                  inputSchema: z.object({}),
-                  execute: async () => serial(async () => {
-                    await animateCursor(roomId, 0, 0, { steps: 8 });
-
-                    // Remove all edges
-                    const edgeKeys: string[] = [];
-                    flow.edges.forEach((edge: any) => edgeKeys.push(edge.id));
-                    for (const k of edgeKeys) flow.removeEdge(k);
-
-                    await pause(50);
-
-                    // Remove all nodes
-                    const nodeKeys: string[] = [];
-                    flow.nodes.forEach((node: any) => nodeKeys.push(node.id));
-                    for (const k of nodeKeys) flow.removeNode(k);
-
-                    await pause();
-                    return { ok: true, nodesRemoved: nodeKeys.length, edgesRemoved: edgeKeys.length };
-                  }),
-                }),
-
-                addEdge: tool({
-                  description: "Create an edge between two nodes. Keep edge labels SHORT (≤20 chars). Use verbs like 'Routes', 'Publishes', 'Reads', 'Writes'. Choose sourceHandle/targetHandle to route edges cleanly without crossing other nodes.",
-                  inputSchema: z.object({
-                    id: z.string().describe("Unique edge ID (e.g. 'edge-1')"),
-                    source: z.string().describe("Source node ID"),
-                    target: z.string().describe("Target node ID"),
-                    sourceHandle: z.string().describe("Source handle (e.g. 'bottom-source', 'right-source')"),
-                    targetHandle: z.string().describe("Target handle (e.g. 'top-target', 'left-target')"),
-                    label: z.string().optional(),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    const sourceNode = flow.getNode(input.source);
-                    const targetNode = flow.getNode(input.target);
-                    if (!sourceNode || !targetNode) {
-                      return { ok: false, reason: "Source or target node not found" };
-                    }
-
-                    const sPos = (sourceNode.position as any) ?? { x: 0, y: 0 };
-                    const tPos = (targetNode.position as any) ?? { x: 0, y: 0 };
-
-                    // Animate cursor from source to target
-                    await animateCursor(roomId, sPos.x + 50, sPos.y + 50, { steps: 8 });
-                    await animateCursor(roomId, tPos.x + 50, tPos.y + 50, { steps: 10 });
-
-                    if (flow.getEdge(input.id)) {
-                      return { ok: false, reason: "Edge ID already exists", id: input.id };
-                    }
-
-                    const edgeData: Record<string, any> = {};
-                    if (input.label) edgeData.label = input.label;
-
-                    flow.addEdge({
-                      id: input.id,
-                      source: input.source,
-                      target: input.target,
-                      sourceHandle: input.sourceHandle,
-                      targetHandle: input.targetHandle,
-                      type: "canvasEdge",
-                      data: edgeData,
-                    } as any);
-
-                    await pause();
-                    return { ok: true, id: input.id };
-                  }),
-                }),
-
-                updateEdge: tool({
-                  description: "Update an edge's label.",
-                  inputSchema: z.object({
-                    id: z.string(),
-                    label: z.string(),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    const edge = flow.getEdge(input.id);
-                    if (!edge) return { ok: false, reason: "Edge not found", id: input.id };
-
-                    // Animate cursor along edge midpoint
-                    const sNode = flow.getNode(edge.source);
-                    const tNode = flow.getNode(edge.target);
-                    if (sNode && tNode) {
-                      const sp = (sNode.position as any) ?? { x: 0, y: 0 };
-                      const tp = (tNode.position as any) ?? { x: 0, y: 0 };
-                      await animateCursor(roomId, (sp.x + tp.x) / 2 + 50, (sp.y + tp.y) / 2 + 50, { steps: 8 });
-                    }
-
-                    flow.updateEdgeData(input.id, { label: input.label });
-                    await pause();
-                    return { ok: true, id: input.id };
-                  }),
-                }),
-
-                deleteEdge: tool({
-                  description: "Delete an edge.",
-                  inputSchema: z.object({
-                    id: z.string(),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    const edge = flow.getEdge(input.id);
-                    if (!edge) return { ok: false, reason: "Edge not found", id: input.id };
-
-                    // Animate cursor to edge midpoint
-                    const sNode = flow.getNode(edge.source);
-                    const tNode = flow.getNode(edge.target);
-                    if (sNode && tNode) {
-                      const sp = (sNode.position as any) ?? { x: 0, y: 0 };
-                      const tp = (tNode.position as any) ?? { x: 0, y: 0 };
-                      await animateCursor(roomId, (sp.x + tp.x) / 2 + 50, (sp.y + tp.y) / 2 + 50, { steps: 8 });
-                    }
-
-                    flow.removeEdge(input.id);
-                    await pause();
-                    return { ok: true, id: input.id };
-                  }),
-                }),
-
-                moveMultipleNodes: tool({
-                  description: "Move multiple nodes at once. Use for reorganizing the layout.",
-                  inputSchema: z.object({
-                    moves: z.array(z.object({
-                      id: z.string(),
-                      x: z.number(),
-                      y: z.number(),
-                    })),
-                  }),
-                  execute: async (input) => serial(async () => {
-                    for (const move of input.moves) {
-                      const node = flow.getNode(move.id);
-                      if (!node) continue;
-
-                      const pos = (node.position as any) ?? { x: 0, y: 0 };
-                      await animateCursor(roomId, pos.x + 50, pos.y + 50, { steps: 6, stepMs: 80 });
-
-                      flow.updateNode(move.id, { position: { x: move.x, y: move.y } });
-                    }
-                    await pause();
-                    return { ok: true, moved: input.moves.length };
-                  }),
-                }),
-              },
-              stopWhen: stepCountIs(30),
-              onStepFinish: ({ toolCalls }) => {
-                // Update phase based on tool activity
-                if (toolCalls.length > 0) {
-                  metadata.set("phase", "applying");
-                }
-              },
-            });
-
-            agentText = result.text;
-          } finally {
-            clearInterval(thinkingInterval);
-          }
-        },
-      );
-
-      // Clear presence with short TTL (cursor fades after 2s)
-      await setPresence(roomId, { isThinking: false }, 2);
-
-      metadata.set("phase", "complete");
-
-      return {
-        status: "completed" as const,
-        thinking: agentText,
-      };
-    } catch (error) {
-      await setPresence(roomId, { isThinking: false }, 5);
-      throw error;
+    if (Object.keys(changes).length > 0) {
+      updateNodes.push({ id: targetNode.id, changes });
     }
+  }
+
+  // Edges to add
+  const addEdges = target.edges.filter((e) => !currentEdgeIds.has(e.id));
+
+  // Edges to remove
+  const removeEdgeIds = current.edges
+    .filter((e) => !targetEdgeIds.has(e.id))
+    .map((e) => e.id);
+
+  // Edges to update
+  const updateEdges: ArchitectureDiff["updateEdges"] = [];
+  for (const targetEdge of target.edges) {
+    const currentEdge = current.edges.find((e) => e.id === targetEdge.id);
+    if (!currentEdge) continue;
+
+    const changes: Partial<ArchitectureEdge> = {};
+    if (currentEdge.label !== targetEdge.label) changes.label = targetEdge.label;
+    if (currentEdge.source !== targetEdge.source) changes.source = targetEdge.source;
+    if (currentEdge.target !== targetEdge.target) changes.target = targetEdge.target;
+
+    if (Object.keys(changes).length > 0) {
+      updateEdges.push({ id: targetEdge.id, changes });
+    }
+  }
+
+  return {
+    addNodes,
+    addEdges,
+    removeNodeIds,
+    removeEdgeIds,
+    updateNodes,
+    updateEdges,
+  };
+}
+
+function logDiff(diff: ArchitectureDiff) {
+  const actions: string[] = [];
+  if (diff.addNodes.length > 0) actions.push(`add ${diff.addNodes.length} nodes`);
+  if (diff.removeNodeIds.length > 0) actions.push(`remove ${diff.removeNodeIds.length} nodes`);
+  if (diff.updateNodes.length > 0) actions.push(`update ${diff.updateNodes.length} nodes`);
+  if (diff.addEdges.length > 0) actions.push(`add ${diff.addEdges.length} edges`);
+  if (diff.removeEdgeIds.length > 0) actions.push(`remove ${diff.removeEdgeIds.length} edges`);
+  if (diff.updateEdges.length > 0) actions.push(`update ${diff.updateEdges.length} edges`);
+  console.log(`[Design Agent] Diff: ${actions.join(", ") || "no changes"}`);
+}
+
+// ── Task ────────────────────────────────────────────────────────────
+
+export const designAgent = task({
+  id: "design-agent",
+  retry: { maxAttempts: 2 },
+  run: async (payload: {
+    prompt: string;
+    roomId: string;
+    projectId: string;
+    currentArchitecture?: {
+      nodes: Array<{ id: string; label: string; shape: string; color: string; logo: string | null }>;
+      edges: Array<{ id: string; source: string; target: string; label: string | null }>;
+    };
+  }) => {
+    const { prompt, roomId, currentArchitecture } = payload;
+    const isModification = !!currentArchitecture && (currentArchitecture.nodes.length > 0 || currentArchitecture.edges.length > 0);
+
+    console.log(`[Design Agent] Starting for room ${roomId} (${isModification ? "modification" : "fresh"})`);
+    console.log(`[Design Agent] Prompt: ${prompt.slice(0, 200)}`);
+
+    // ── Set agent thinking state ───────────────────────────────────
+    await liveblocks.mutateStorage(roomId, async ({ root }) => {
+      root.set("agentThinking", true);
+      root.set("agentCursor", { x: 400, y: 300 });
+    });
+    metadata.set("phase", "reading");
+
+    // ── 1. Generate target architecture ────────────────────────────
+    let architecture: Architecture;
+    try {
+      const systemPrompt = isModification
+        ? MODIFY_PROMPT.replace("{currentCanvas}", JSON.stringify(currentArchitecture, null, 2))
+        : FRESH_PROMPT;
+
+      const userMessage = isModification
+        ? `The user wants to: ${prompt}\n\nOutput the COMPLETE target architecture (all nodes and edges that should exist after the change). Preserve existing components unless asked to remove them.`
+        : prompt;
+
+      const result = await generateObject({
+        model: googleProvider(GEMINI_MODEL),
+        schema: ArchitectureSchema,
+        prompt: `${systemPrompt}\n\nUser request: ${userMessage}`,
+        temperature: 0.7,
+      });
+      architecture = result.object;
+      // Strip any logos that don't exist in tech-stack-icons
+      architecture = stripInvalidLogos(architecture);
+      console.log(
+        `[Design Agent] Generated: ${architecture.nodes.length} nodes, ${architecture.edges.length} edges`,
+      );
+      metadata.set("phase", "generating");
+    } catch (err) {
+      console.error("[Design Agent] generateObject failed:", err);
+      await liveblocks.mutateStorage(roomId, async ({ root }) => {
+        root.set("agentThinking", false);
+        root.set("agentCursor", null);
+      });
+      throw err;
+    }
+
+    // ── 2. Deduplicate ────────────────────────────────────────────
+    architecture = deduplicateNodes(architecture);
+
+    // ── 3. Validate ───────────────────────────────────────────────
+    const validation = validateArchitecture(architecture);
+    if (!validation.valid) {
+      console.warn(
+        `[Design Agent] Validation issues:`,
+        validation.issues.join("; "),
+      );
+      if (validation.orphans.length > 0) {
+        const repairEdges = repairOrphans(architecture, validation.orphans);
+        architecture.edges.push(...repairEdges);
+        console.log(
+          `[Design Agent] Repaired ${repairEdges.length} orphaned nodes`,
+        );
+      }
+    }
+
+    // ── 4. Layout with dagre ──────────────────────────────────────
+    const { nodes: layoutNodes, edges: layoutEdges } = layoutArchitecture(architecture);
+    console.log(
+      `[Design Agent] Layout complete: ${layoutNodes.length} positioned nodes, ${layoutEdges.length} edges`,
+    );
+
+    // Move cursor to center of generated layout
+    if (layoutNodes.length > 0) {
+      const centerX = layoutNodes.reduce((s, n) => s + n.position.x, 0) / layoutNodes.length;
+      const centerY = layoutNodes.reduce((s, n) => s + n.position.y, 0) / layoutNodes.length;
+      await liveblocks.mutateStorage(roomId, async ({ root }) => {
+        root.set("agentCursor", { x: centerX, y: centerY });
+      });
+    }
+    metadata.set("phase", "applying");
+
+    // ── 5. Apply to Liveblocks ────────────────────────────────────
+    if (isModification) {
+      // Diff-based: only apply changes
+      const diff = computeDiff(currentArchitecture!, architecture);
+      logDiff(diff);
+
+      await mutateFlow({ client: liveblocks, roomId }, (flow) => {
+        // Remove nodes
+        for (const id of diff.removeNodeIds) flow.removeNode(id);
+
+        // Remove edges
+        for (const id of diff.removeEdgeIds) flow.removeEdge(id);
+
+        // Add new nodes
+        for (const node of diff.addNodes) {
+          const layoutNode = layoutNodes.find((n) => n.id === node.id);
+          const color = COLOR_MAP[node.color] ?? COLOR_MAP.neutral;
+          flow.addNode({
+            id: node.id,
+            type: "canvasNode",
+            position: layoutNode?.position ?? { x: 0, y: 0 },
+            data: {
+              label: node.label,
+              color: color.bg,
+              textColor: color.text,
+              shape: node.shape,
+              logo: node.logo,
+            },
+            ...(layoutNode?.measured
+              ? { width: layoutNode.measured.width, height: layoutNode.measured.height }
+              : {}),
+          } as any);
+        }
+
+        // Update existing nodes
+        for (const { id, changes } of diff.updateNodes) {
+          const layoutNode = layoutNodes.find((n) => n.id === id);
+          const nodeData: Record<string, unknown> = {};
+          if (changes.label !== undefined) nodeData.label = changes.label;
+          if (changes.color !== undefined) {
+            const c = COLOR_MAP[changes.color] ?? COLOR_MAP.neutral;
+            nodeData.color = c.bg;
+            nodeData.textColor = c.text;
+          }
+          if (changes.shape !== undefined) nodeData.shape = changes.shape;
+          if (changes.logo !== undefined) nodeData.logo = changes.logo;
+
+          if (Object.keys(nodeData).length > 0) {
+            flow.updateNodeData(id, nodeData as any);
+          }
+          if (layoutNode?.position) {
+            flow.updateNode(id, { position: layoutNode.position } as any);
+          }
+        }
+
+        // Add new edges
+        for (const edge of diff.addEdges) {
+          const layoutEdge = layoutEdges.find((e) => e.id === edge.id);
+          flow.addEdge({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: layoutEdge?.sourceHandle ?? "bottom",
+            targetHandle: layoutEdge?.targetHandle ?? "top",
+            label: edge.label,
+            type: "canvasEdge",
+          } as any);
+        }
+
+        // Update existing edges
+        for (const { id, changes } of diff.updateEdges) {
+          const layoutEdge = layoutEdges.find((e) => e.id === id);
+          const edgeData: Record<string, unknown> = {};
+          if (changes.label !== undefined) edgeData.label = changes.label;
+          if (changes.source !== undefined) edgeData.source = changes.source;
+          if (changes.target !== undefined) edgeData.target = changes.target;
+
+          if (Object.keys(edgeData).length > 0) {
+            flow.updateEdge(id, edgeData as any);
+          }
+        }
+      });
+    } else {
+      // Fresh: clear everything and write
+      await mutateFlow({ client: liveblocks, roomId }, (flow) => {
+        for (const n of flow.nodes) flow.removeNode(n.id);
+        for (const e of flow.edges) flow.removeEdge(e.id);
+
+        for (const node of layoutNodes) {
+          const color = COLOR_MAP[node.data.color] ?? COLOR_MAP.neutral;
+          flow.addNode({
+            id: node.id,
+            type: node.type,
+            position: node.position,
+            data: {
+              label: node.data.label,
+              color: color.bg,
+              textColor: color.text,
+              shape: node.data.shape,
+              logo: node.data.logo,
+            },
+            ...(node.measured
+              ? { width: node.measured.width, height: node.measured.height }
+              : {}),
+          } as any);
+        }
+
+        for (const edge of layoutEdges) {
+          flow.addEdge({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle,
+            targetHandle: edge.targetHandle,
+            label: edge.label,
+            type: edge.type,
+          } as any);
+        }
+      });
+    }
+
+    console.log(`[Design Agent] Canvas updated successfully`);
+
+    // ── Clear agent state ──────────────────────────────────────────
+    metadata.set("phase", "complete");
+    await liveblocks.mutateStorage(roomId, async ({ root }) => {
+      root.set("agentThinking", false);
+      root.set("agentCursor", null);
+    });
+
+    return {
+      status: "completed",
+      nodesCount: layoutNodes.length,
+      edgesCount: layoutEdges.length,
+      mode: isModification ? "modification" : "fresh",
+    };
   },
 });

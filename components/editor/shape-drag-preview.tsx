@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import StackIcon from "tech-stack-icons";
 import type { NodeShape } from "@/types/canvas";
-import { parseShapeDrag } from "@/lib/canvas-shapes";
+import { parseShapeDrag, parseTextDrag } from "@/lib/canvas-shapes";
 import { parseLogoDragToCanvas } from "@/lib/logo-data";
 import { NODE_COLORS } from "@/types/canvas";
 
@@ -21,15 +21,18 @@ function GhostRectangle({ color }: { color: string }) {
   );
 }
 
-function GhostPill({ color }: { color: string }) {
+function GhostText({ color }: { color: string }) {
   return (
     <div
-      className="w-full h-full rounded-full"
+      className="w-full h-full rounded-lg border border-white/[0.15]"
       style={{
-        background: color,
-        border: "1px solid rgba(255,255,255,0.15)",
+        background: `${color}dd`,
       }}
-    />
+    >
+      <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white/80">
+        Text
+      </div>
+    </div>
   );
 }
 
@@ -87,7 +90,6 @@ function GhostCylinder({ color }: { color: string }) {
 
 const GHOST_SHAPES: Record<NodeShape, React.ComponentType<{ color: string }>> = {
   rectangle: GhostRectangle,
-  pill: GhostPill,
   circle: GhostCircle,
   diamond: GhostDiamond,
   hexagon: GhostHexagon,
@@ -107,6 +109,14 @@ interface ShapeDragState {
   y: number;
 }
 
+interface TextDragState {
+  kind: "text";
+  w: number;
+  h: number;
+  x: number;
+  y: number;
+}
+
 interface LogoDragState {
   kind: "logo";
   icon: string;
@@ -118,7 +128,7 @@ interface LogoDragState {
   y: number;
 }
 
-type DragState = ShapeDragState | LogoDragState;
+type DragState = ShapeDragState | TextDragState | LogoDragState;
 
 /**
  * Renders a semi-transparent ghost of the shape being dragged from the
@@ -148,6 +158,12 @@ export function ShapeDragPreview() {
         if (payload) {
           payloadRef.current = { kind: "shape", shape: payload.shape, w: payload.w, h: payload.h, x: 0, y: 0 };
         }
+      } else if (types.includes("application/x-kubecanvas-text")) {
+        const raw = e.dataTransfer?.getData("application/x-kubecanvas-text") || "";
+        const payload = parseTextDrag(raw);
+        if (payload) {
+          payloadRef.current = { kind: "text", w: payload.w, h: payload.h, x: 0, y: 0 };
+        }
       } else if (types.includes("application/x-kubecanvas-logo")) {
         const raw =
           e.dataTransfer?.getData("application/x-kubecanvas-logo") ||
@@ -168,8 +184,9 @@ export function ShapeDragPreview() {
     try {
       const types = Array.from(e.dataTransfer?.types || []);
       const isShape = types.includes("application/x-kubecanvas-shape");
+      const isText = types.includes("application/x-kubecanvas-text");
       const isLogo = types.includes("application/x-kubecanvas-logo");
-      if (!isShape && !isLogo) return;
+      if (!isShape && !isText && !isLogo) return;
 
       // Suppress default to allow drop
       e.preventDefault();
@@ -249,6 +266,23 @@ export function ShapeDragPreview() {
         }}
       >
         <Ghost color={GHOST_DEFAULT_COLOR} />
+      </div>
+    );
+  }
+
+  if (drag.kind === "text") {
+    return (
+      <div
+        className="pointer-events-none fixed z-[9999]"
+        style={{
+          left: drag.x - drag.w / 2,
+          top: drag.y - drag.h / 2,
+          width: drag.w,
+          height: drag.h,
+          opacity: 0.5,
+        }}
+      >
+        <GhostText color={GHOST_DEFAULT_COLOR} />
       </div>
     );
   }

@@ -14,16 +14,42 @@ export const SHAPES: ShapeDefinition[] = [
   { shape: "rectangle", label: "Rectangle", w: 192, h: 128 },
   { shape: "diamond", label: "Diamond", w: 160, h: 160 },
   { shape: "circle", label: "Circle", w: 140, h: 140 },
-  { shape: "pill", label: "Pill", w: 192, h: 80 },
   { shape: "cylinder", label: "Cylinder", w: 160, h: 140 },
   { shape: "hexagon", label: "Hexagon", w: 192, h: 128 },
 ];
 
-// ── Drag payload ───────────────────────────────────────────────────────
+// ── Drag payload ──────────────────────────────────────────────────────
 export interface ShapeDragPayload {
   shape: NodeShape;
   w: number;
   h: number;
+}
+
+export interface TextDragPayload {
+  text: string;
+  w: number;
+  h: number;
+}
+
+export function serializeTextDrag(payload: TextDragPayload): string {
+  return JSON.stringify(payload);
+}
+
+export function parseTextDrag(raw: string): TextDragPayload | null {
+  try {
+    const data = JSON.parse(raw);
+    if (
+      data &&
+      typeof data.text === "string" &&
+      typeof data.w === "number" &&
+      typeof data.h === "number"
+    ) {
+      return data as TextDragPayload;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export function serializeShapeDrag(payload: ShapeDragPayload): string {

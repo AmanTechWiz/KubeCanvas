@@ -1,10 +1,7 @@
 "use client"
 
 import React, { useEffect, useRef, useState } from "react"
-import { useOther, useOthers } from "@liveblocks/react"
-
-// ── Constants ──────────────────────────────────────────────────────────
-const AI_AGENT_ID = "ai-agent"
+import { useStorage } from "@liveblocks/react"
 
 // ── Spiral Spinner (shared with ai-sidebar.tsx) ───────────────────────
 function SpiralSpinner({ className }: { className?: string }) {
@@ -87,15 +84,14 @@ function readViewport(): Viewport {
 
 // ── Component ──────────────────────────────────────────────────────────
 // Renders the AI agent's cursor on the canvas. The agent sets its
-// position via the Liveblocks REST API (presence). This component
-// reads that presence and renders a purple cursor with wobble animation.
+// position via Liveblocks Storage (agentCursor field) which is written
+// by the backend design agent through mutateFlow(). This is more reliable
+// than REST API presence which may not appear in useOthers().
 
 export function AgentCursor() {
-  const others = useOthers()
+  const agentCursor = useStorage((s) => s.agentCursor)
+  const agentThinking = useStorage((s) => s.agentThinking)
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 })
-
-  // Find the AI agent in others
-  const agent = others.find((o) => o.connectionId === -1 || o.id === AI_AGENT_ID)
 
   // Track viewport changes via MutationObserver
   useEffect(() => {
@@ -111,16 +107,33 @@ export function AgentCursor() {
     return () => observer.disconnect()
   }, [])
 
-  if (!agent) return null
+  // ── Smooth fade-in / fade-out ────────────────────────────────────
+  // When agentCursor transitions from non-null → null we keep the
+  // component mounted for a short window so the cursor can fade out
+  // instead of vanishing instantly.
+  const [visible, setVisible] = useState(false)
+  const [fadingOut, setFadingOut] = useState(false)
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const agentCursor = (agent.presence as any)?.agentCursor
-  const isThinking = (agent.presence as any)?.isThinking ?? false
+  useEffect(() => {
+    if (agentCursor) {
+      if (fadeTimer.current) clearTimeout(fadeTimer.current)
+      setFadingOut(false)
+      setVisible(true)
+    } else if (visible) {
+      setFadingOut(true)
+      fadeTimer.current = setTimeout(() => {
+        setVisible(false)
+        setFadingOut(false)
+      }, 500)
+    }
+    return () => { if (fadeTimer.current) clearTimeout(fadeTimer.current) }
+  }, [agentCursor, visible])
 
-  if (!agentCursor) return null
+  if (!visible && !fadingOut) return null
 
-  // Convert canvas coordinates → screen coordinates
-  const screenX = agentCursor.x * viewport.zoom + viewport.x
-  const screenY = agentCursor.y * viewport.zoom + viewport.y
+  const screenX = agentCursor ? agentCursor.x * viewport.zoom + viewport.x : 0
+  const screenY = agentCursor ? agentCursor.y * viewport.zoom + viewport.y : 0
 
   return (
     <div
@@ -130,8 +143,9 @@ export function AgentCursor() {
         top: 0,
         left: 0,
         transform: `translate(${screenX}px, ${screenY}px)`,
+        opacity: agentCursor ? 1 : 0,
+        transition: "transform 600ms cubic-bezier(0.22, 1, 0.36, 1), opacity 500ms ease-in",
         zIndex: 99999,
-        transition: "transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1)",
       }}
     >
       <style>{`
@@ -191,7 +205,7 @@ export function AgentCursor() {
           boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
         }}
       >
-        {isThinking ? (
+        {agentThinking ? (
           <span className="flex items-center gap-1.5">
             <SpiralSpinner className="size-3.5" />
             Thinking…

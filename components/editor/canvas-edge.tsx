@@ -118,7 +118,7 @@ function CanvasEdgeInner(props: EdgeProps) {
       <BaseEdge
         id={id}
         path={edgePath}
-        markerStart={markerEnd}
+        markerEnd={markerEnd}
         interactionWidth={20}
         style={{
           stroke: edgeStroke,

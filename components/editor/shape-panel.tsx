@@ -7,13 +7,15 @@ import {
   Circle,
   Cylinder,
   Hexagon,
-  Minus,
+  Type,
   Blocks,
 } from "lucide-react";
 import {
   SHAPES,
   serializeShapeDrag,
+  serializeTextDrag,
   type ShapeDragPayload,
+  type TextDragPayload,
 } from "@/lib/canvas-shapes";
 import type { NodeShape } from "@/types/canvas";
 import { ClearConfirmButton } from "@/components/editor/clear-confirm";
@@ -56,10 +58,40 @@ const SHAPE_ICONS: Record<NodeShape, React.ComponentType<{ className?: string }>
   rectangle: RectangleHorizontal,
   diamond: Diamond,
   circle: Circle,
-  pill: Minus,
   cylinder: Cylinder,
   hexagon: Hexagon,
 };
+
+// ── Text button (drag to add text anywhere on canvas) ──────────────────
+function TextButton() {
+  const handleDragStart = (e: React.DragEvent) => {
+    try {
+      const serialized = serializeTextDrag({ text: "", w: 200, h: 60 })
+      e.dataTransfer.setData("application/x-kubecanvas-text", serialized)
+      e.dataTransfer.setData("text/plain", serialized)
+      e.dataTransfer.effectAllowed = "copy"
+
+      const ghost = document.createElement("div")
+      ghost.style.cssText = "width:1px;height:1px;position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;"
+      document.body.appendChild(ghost)
+      e.dataTransfer.setDragImage(ghost, 0, 0)
+      setTimeout(() => ghost.remove(), 0)
+    } catch {
+      // Defensive
+    }
+  }
+
+  return (
+    <button
+      draggable
+      onDragStart={handleDragStart}
+      title="Add Text"
+      className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground cursor-grab active:cursor-grabbing pointer-events-auto"
+    >
+      <Type className="h-4 w-4" />
+    </button>
+  )
+}
 
 // ── Shape button ───────────────────────────────────────────────────────
 function ShapeButton({ shape, label }: { shape: ShapeDragPayload; label: string }) {
@@ -68,22 +100,17 @@ function ShapeButton({ shape, label }: { shape: ShapeDragPayload; label: string 
   const handleDragStart = (e: React.DragEvent) => {
     try {
       console.log("[ShapePanel] dragstart", shape)
-      // Set both a custom MIME type and a text/plain fallback for broader
-      // browser compatibility.
       const serialized = serializeShapeDrag(shape)
       e.dataTransfer.setData("application/x-kubecanvas-shape", serialized)
       e.dataTransfer.setData("text/plain", serialized)
       e.dataTransfer.effectAllowed = "copy"
 
-      // Suppress the browser's default drag ghost — our custom
-      // ShapeDragPreview component renders the preview instead.
       const ghost = document.createElement("div")
       ghost.style.cssText = "width:1px;height:1px;position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;"
       document.body.appendChild(ghost)
       e.dataTransfer.setDragImage(ghost, 0, 0)
-      // Clean up after a tick — the browser has captured the image
       setTimeout(() => ghost.remove(), 0)
-    } catch (err) {
+    } catch {
       // Defensive: some browsers restrict dataTransfer access in certain contexts
     }
   };
@@ -122,6 +149,7 @@ export function ShapePanel() {
         >
           <Blocks className="h-4 w-4" />
         </button>
+        <TextButton />
         <div className="mx-0.5 h-5 w-px bg-white/[0.12]" />
         {SHAPES.map((s) => (
           <ShapeButton

@@ -19,12 +19,6 @@ import {
   useCanUndo,
   useCanRedo,
   useUpdateMyPresence,
-  useOthers,
-  useSelf,
-  useCreateFeed,
-  useFeeds,
-  useFeedMessages,
-  useCreateFeedMessage,
 } from "@liveblocks/react"
 
 import { useLiveblocksFlow } from "@liveblocks/react-flow"
@@ -54,21 +48,13 @@ import { CanvasControls } from "@/components/editor/canvas-controls"
 import { CollaboratorAvatars } from "@/components/editor/collaborator-avatars"
 import { LiveCursors } from "@/components/editor/live-cursors"
 import { AgentCursor } from "@/components/editor/agent-cursor"
-import { AiSidebar } from "@/components/editor/ai-sidebar"
+
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useAutosave, type SaveStatus } from "@/hooks/use-autosave"
 import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
-import { parseShapeDrag, SHAPES } from "@/lib/canvas-shapes"
-import { parseLogoDragToCanvas } from "@/lib/logo-data"
-import {
-  AI_STATUS_FEED_ID,
-  AI_CHAT_FEED_ID,
-  AI_ARCHITECT_FEED_ID,
-  validateAiStatusFeedMessage,
-  validateAiChatFeedMessage,
-  type AiStatusFeedMessageData,
-  type AiChatFeedMessageData,
-} from "@/types/tasks"
+import { parseShapeDrag, parseTextDrag, SHAPES } from "@/lib/canvas-shapes"
+import { parseLogoDragToCanvas, logoShapeForIcon } from "@/lib/logo-data"
+
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
 
 // ── React Flow defaults ────────────────────────────────────────────────
@@ -82,149 +68,6 @@ const nodeTypes = {
 // ── Custom edge types ──────────────────────────────────────────────────
 const edgeTypes = {
   canvasEdge: CanvasEdgeComponent,
-}
-
-// ── Feed contexts (must be inside RoomProvider) ─────────────────────
-// Provides sendFeedMessage + sendChatMessage to AiSidebar and child tabs
-// so they can broadcast updates without calling Liveblocks feed hooks directly.
-// The two feeds (status + chat) are separate Liveblocks feeds but share
-// a single provider for convenience.
-
-interface FeedContextValue {
-  sendFeedMessage: (data: AiStatusFeedMessageData) => void
-  latestFeedMsg: AiStatusFeedMessageData | null
-  isAiActive: boolean
-  statusLabel: string | null
-  sendChatMessage: (data: AiChatFeedMessageData) => void
-  chatMessages: AiChatFeedMessageData[]
-  sendArchitectMessage: (data: AiChatFeedMessageData) => void
-  architectMessages: AiChatFeedMessageData[]
-  currentUserName: string
-}
-
-export const FeedContext = React.createContext<FeedContextValue | null>(null)
-
-function FeedProvider({ children }: { children: React.ReactNode }) {
-  const createFeed = useCreateFeed()
-  const createFeedMessage = useCreateFeedMessage()
-  const { feeds } = useFeeds()
-  const self = useSelf()
-
-  const currentUserName = self?.info?.name ?? "You"
-
-  // ── Status feed ───────────────────────────────────────────────────
-  useEffect(() => {
-    createFeed(AI_STATUS_FEED_ID, { metadata: { name: "AI Status" } }).catch(
-      () => {}, // Ignore "feed already exists" errors
-    )
-  }, [createFeed])
-
-  const { messages: statusFeedMessages } = useFeedMessages(AI_STATUS_FEED_ID)
-
-  const latestFeedMsg = useMemo(() => {
-    if (!statusFeedMessages || statusFeedMessages.length === 0) return null
-    return validateAiStatusFeedMessage(statusFeedMessages[0].data)
-  }, [statusFeedMessages])
-
-  // Only use feed status for AI activity — do NOT include useOthers/
-  // anyOtherThinking here because the AI agent sets presence via the
-  // Liveblocks REST API and clearance can lag behind the feed update,
-  // keeping the "thinking" indicator visible after completion.
-  const isAiActive =
-    latestFeedMsg?.status === "thinking" ||
-    latestFeedMsg?.status === "analyzing" ||
-    latestFeedMsg?.status === "generating"
-
-  const statusLabel = useMemo(() => {
-    if (!latestFeedMsg) return null
-    switch (latestFeedMsg.status) {
-      case "thinking":
-        return "Thinking…"
-      case "analyzing":
-        return "Analyzing…"
-      case "generating":
-        return "Generating…"
-      case "complete":
-        return "Complete"
-      case "failed":
-        return "Failed"
-      default:
-        return null
-    }
-  }, [latestFeedMsg])
-
-  const sendFeedMessage = useCallback(
-    (data: AiStatusFeedMessageData) => {
-      createFeedMessage(AI_STATUS_FEED_ID, data)
-    },
-    [createFeedMessage],
-  )
-
-  // ── Chat feed ─────────────────────────────────────────────────────
-  useEffect(() => {
-    createFeed(AI_CHAT_FEED_ID, { metadata: { name: "AI Chat" } }).catch(
-      () => {}, // Ignore "feed already exists" errors
-    )
-  }, [createFeed])
-
-  const { messages: chatFeedMessages } = useFeedMessages(AI_CHAT_FEED_ID)
-
-  const chatMessages = useMemo(() => {
-    if (!chatFeedMessages) return []
-    return chatFeedMessages
-      .map((m) => validateAiChatFeedMessage(m.data))
-      .filter((m): m is AiChatFeedMessageData => m !== null)
-      .sort((a, b) => a.timestamp - b.timestamp)
-  }, [chatFeedMessages])
-
-  const sendChatMessage = useCallback(
-    (data: AiChatFeedMessageData) => {
-      createFeedMessage(AI_CHAT_FEED_ID, data)
-    },
-    [createFeedMessage],
-  )
-
-  // ── Architect feed (separate from chat) ──────────────────────────
-  useEffect(() => {
-    createFeed(AI_ARCHITECT_FEED_ID, { metadata: { name: "AI Architect" } }).catch(
-      () => {},
-    )
-  }, [createFeed])
-
-  const { messages: architectFeedMessages } = useFeedMessages(AI_ARCHITECT_FEED_ID)
-
-  const architectMessages = useMemo(() => {
-    if (!architectFeedMessages) return []
-    return architectFeedMessages
-      .map((m) => validateAiChatFeedMessage(m.data))
-      .filter((m): m is AiChatFeedMessageData => m !== null)
-      .sort((a, b) => a.timestamp - b.timestamp)
-  }, [architectFeedMessages])
-
-  const sendArchitectMessage = useCallback(
-    (data: AiChatFeedMessageData) => {
-      createFeedMessage(AI_ARCHITECT_FEED_ID, data)
-    },
-    [createFeedMessage],
-  )
-
-  return (
-    <FeedContext.Provider
-      value={{
-        sendFeedMessage,
-        latestFeedMsg,
-        isAiActive,
-        statusLabel,
-        sendChatMessage,
-        chatMessages,
-        sendArchitectMessage,
-        architectMessages,
-        currentUserName,
-      }}
-    >
-      {children}
-    </FeedContext.Provider>
-  )
 }
 
 // ── Default edge options ───────────────────────────────────────────────
@@ -249,49 +92,7 @@ function generateNodeId(shape: string): string {
   return `${shape}-${Date.now()}-${nodeCounter++}`
 }
 
-// ── Convert screen coordinates → flow coordinates ───────────────────
-// ReactFlow stores its viewport transform as an inline style on
-// .react-flow__viewport: "translate(Xpx, Ypx) scale(Z)".
-// We read it directly to avoid needing a ReactFlowProvider / useReactFlow.
-function screenToFlowPosition(clientX: number, clientY: number): { x: number; y: number } {
-  const rfEl = document.querySelector(".react-flow")
-  const viewportEl = document.querySelector(".react-flow__viewport") as HTMLElement | null
-  if (!rfEl || !viewportEl) return { x: clientX, y: clientY }
-
-  const rfRect = rfEl.getBoundingClientRect()
-  // Prefer inline style transform (ReactFlow sets this), but fall back
-  // to the computed style which may return a `matrix(...)` string.
-  const transform =
-    viewportEl.style.transform || window.getComputedStyle(viewportEl).transform || ""
-  let tx = 0
-  let ty = 0
-  let zoom = 1
-
-  // ReactFlow sets: translate(Xpx, Ypx) scale(Z)
-  const m = transform.match(
-    /translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)\s*scale\(([-\d.e]+)\)/,
-  )
-  if (m) {
-    tx = parseFloat(m[1])
-    ty = parseFloat(m[2])
-    zoom = parseFloat(m[3])
-  } else {
-    // Fallback: matrix(a, b, c, d, tx, ty)
-    const mx = transform.match(
-      /matrix\(([-\d.e]+),\s*[-\d.e]+,\s*[-\d.e]+,\s*[-\d.e]+,\s*([-\d.e]+),\s*([-\d.e]+)\)/,
-    )
-    if (mx) {
-      zoom = parseFloat(mx[1])
-      tx = parseFloat(mx[2])
-      ty = parseFloat(mx[3])
-    }
-  }
-
-  return {
-    x: (clientX - rfRect.left - tx) / zoom,
-    y: (clientY - rfRect.top - ty) / zoom,
-  }
-}
+// ── Screen → flow coordinate conversion is done inline in each drop handler
 
 // ── Inner canvas that runs inside the Room ────────────────────────────
 //
@@ -302,25 +103,64 @@ function FlowCanvas({
   pendingTemplate,
   onTemplateImported,
   currentUserId,
-  aiSidebarOpen,
-  onAiSidebarClose,
   onSaveApi,
+  aiSidebarOpen,
 }: {
   projectId: string
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
   currentUserId: string
-  aiSidebarOpen?: boolean
-  onAiSidebarClose?: () => void
   onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
+  aiSidebarOpen?: boolean
 }) {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect } =
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect: liveblocksOnConnect } =
     useLiveblocksFlow({ suspense: true })
 
   // ── Cursor presence ───────────────────────────────────────────────
   const updateMyPresence = useUpdateMyPresence()
   const cursorThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
+
+  // ── Fix reversed arrow direction ──────────────────────────────────
+  // Each node has BOTH source and target handles at every position.
+  // When a user drags from a target handle, React Flow swaps source/target
+  // (because fromType='target' → source=targetNode, target=sourceNode).
+  // We track which node the drag started from and detect reversed
+  // connections by checking if connection.target === dragStartNode.
+  const dragStartNodeRef = useRef<string | null>(null)
+
+  const onConnectStart = useCallback(
+    (...args: Parameters<NonNullable<React.ComponentProps<typeof ReactFlow>["onConnectStart"]>>) => {
+      const params = args[1]
+      dragStartNodeRef.current = params?.nodeId ?? null
+    },
+    [],
+  )
+
+  const onConnectEnd = useCallback(() => {
+    dragStartNodeRef.current = null
+  }, [])
+
+  const onConnect = useCallback(
+    (connection: { source: string; target: string; sourceHandle: string | null; targetHandle: string | null }) => {
+      // If the connection's target is the node the user started dragging from,
+      // React Flow swapped source/target (user dragged from a target handle).
+      // Swap back so the arrow always points from drag-start to drag-end.
+      if (dragStartNodeRef.current && connection.target === dragStartNodeRef.current) {
+        liveblocksOnConnect({
+          ...connection,
+          source: connection.target,
+          target: connection.source,
+          sourceHandle: connection.targetHandle,
+          targetHandle: connection.sourceHandle,
+        })
+        return
+      }
+
+      liveblocksOnConnect(connection)
+    },
+    [liveblocksOnConnect],
+  )
 
   // Track viewport changes from React Flow pan/zoom
   const handleMove = useCallback(
@@ -558,10 +398,26 @@ function FlowCanvas({
   // ── Logo picker state ────────────────────────────────────────
   const [logoPickerOpen, setLogoPickerOpen] = useState(false)
 
+  // Close the logo picker after a drag ends (on dragend, NOT dragstart).
+  // Closing on dragstart unmounts the drag source mid-drag, which causes
+  // some browsers (especially Firefox) to cancel the drag entirely.
+  useEffect(() => {
+    if (!logoPickerOpen) return
+    const onDragEnd = (e: Event) => {
+      const dt = (e as unknown as globalThis.DragEvent).dataTransfer
+      const types = Array.from(dt?.types || [])
+      if (types.includes("application/x-kubecanvas-logo")) {
+        setLogoPickerOpen(false)
+      }
+    }
+    document.addEventListener("dragend", onDragEnd)
+    return () => document.removeEventListener("dragend", onDragEnd)
+  }, [logoPickerOpen])
+
   const handleAddLogo = useCallback(
     (payload: LogoAddPayload) => {
       addNodeMutation({
-        shape: "rectangle",
+        shape: logoShapeForIcon(payload.icon),
         w: 120,
         h: 80,
         flowX: payload.flowX,
@@ -593,6 +449,53 @@ function FlowCanvas({
   // ── Canvas state loader ──────────────────────────────────────────
   const [canvasLoaded, setCanvasLoaded] = useState(false)
 
+  // ── Migrate old edge handle IDs ──────────────────────────────────
+  // Edges should use bare position IDs (e.g. "right", "left", "top", "bottom").
+  // Older versions may have had type-suffixed IDs ("right-source") or
+  // malformed concatenated IDs ("right-source,target:").
+  // This migration normalizes all edge handles to the bare position format.
+  const edgeMigrationRan = useRef(false)
+  const migrateEdgeHandles = useMutation(
+    ({ storage }) => {
+      const flow = storage.get("flow") as any
+      if (!flow) return
+      const edgesMap = flow.get("edges")
+      if (!edgesMap) return
+
+      const VALID_POSITIONS = ["top", "bottom", "left", "right"]
+      edgesMap.forEach((edge: any) => {
+        const src = edge.get("sourceHandle")
+        const tgt = edge.get("targetHandle")
+        if (typeof src === "string") {
+          // Fix concatenated format like "right-source,target:" or "right-source"
+          let bare = src.split(",")[0].toLowerCase()
+          // Strip any existing suffix to get the bare position
+          bare = bare.replace(/-source$/, "").replace(/-target$/, "")
+          if (VALID_POSITIONS.includes(bare) && bare !== src) {
+            // Migrate to bare position format
+            edge.set("sourceHandle", bare)
+          }
+        }
+        if (typeof tgt === "string") {
+          let bare = tgt.split(",")[0].toLowerCase()
+          bare = bare.replace(/-source$/, "").replace(/-target$/, "")
+          if (VALID_POSITIONS.includes(bare) && bare !== tgt) {
+            // Migrate to bare position format
+            edge.set("targetHandle", bare)
+          }
+        }
+      })
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (canvasLoaded && !edgeMigrationRan.current) {
+      edgeMigrationRan.current = true
+      migrateEdgeHandles()
+    }
+  }, [canvasLoaded, migrateEdgeHandles])
+
   // ── External drag-drop handlers on wrapper div ────────────────────
   // ReactFlow v12 uses pointer events internally and does not consume
   // native drag/drop events, so they bubble up to this wrapper div.
@@ -600,7 +503,11 @@ function FlowCanvas({
     try {
       const types = Array.from(e.dataTransfer.types || [])
       console.log("[FlowCanvas] dragover types:", types)
-      if (types.includes("application/x-kubecanvas-shape") || types.includes("application/x-kubecanvas-logo")) {
+      if (
+        types.includes("application/x-kubecanvas-shape") ||
+        types.includes("application/x-kubecanvas-logo") ||
+        types.includes("application/x-kubecanvas-text")
+      ) {
         e.preventDefault()
         e.dataTransfer.dropEffect = "copy"
       }
@@ -615,39 +522,68 @@ function FlowCanvas({
         const types = Array.from(e.dataTransfer.types || [])
         console.log("[FlowCanvas] drop types:", types, "client:", e.clientX, e.clientY)
 
-        // Check for logo drop first
-        const logoRaw = e.dataTransfer.getData("application/x-kubecanvas-logo")
-        if (logoRaw) {
-          const logoPayload = parseLogoDragToCanvas(logoRaw)
-          if (logoPayload) {
-            e.preventDefault()
-            e.stopPropagation()
-            const position = screenToFlowPosition(e.clientX, e.clientY)
-            addNodeMutation({
-              shape: "rectangle",
-              w: logoPayload.w,
-              h: logoPayload.h,
-              flowX: position.x,
-              flowY: position.y,
-              logo: logoPayload.icon,
-              logoCustomSvg: logoPayload.customSvg,
-              label: logoPayload.label,
-            })
-            return
+        // Convert screen → flow coordinates using the viewport DOM
+        const rfViewport = document.querySelector(".react-flow__viewport") as HTMLElement | null
+        const rfContainer = document.querySelector(".react-flow") as HTMLElement | null
+        let position = { x: e.clientX, y: e.clientY }
+        if (rfViewport && rfContainer) {
+          const rect = rfContainer.getBoundingClientRect()
+          const transform = rfViewport.style.transform || ""
+          const m = transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)\s*scale\(([-\d.e]+)\)/)
+          const tx = m ? parseFloat(m[1]) : 0
+          const ty = m ? parseFloat(m[2]) : 0
+          const zoom = m ? parseFloat(m[3]) : 1
+          position = {
+            x: (e.clientX - rect.left - tx) / zoom,
+            y: (e.clientY - rect.top - ty) / zoom,
           }
         }
 
-        // Fall back to shape drop
-        const raw = e.dataTransfer.getData("application/x-kubecanvas-shape")
-        console.log("[FlowCanvas] drop raw:", raw)
-        const payload = parseShapeDrag(raw)
+        // Check for logo drop first — try custom MIME type, then text/plain fallback
+        const logoRaw =
+          e.dataTransfer.getData("application/x-kubecanvas-logo") ||
+          e.dataTransfer.getData("text/plain")
+        const logoPayload = logoRaw ? parseLogoDragToCanvas(logoRaw) : null
+        if (logoPayload) {
+          e.preventDefault()
+          e.stopPropagation()
+          addNodeMutation({
+            shape: logoShapeForIcon(logoPayload.icon),
+            w: logoPayload.w,
+            h: logoPayload.h,
+            flowX: position.x,
+            flowY: position.y,
+            logo: logoPayload.icon,
+            logoCustomSvg: logoPayload.customSvg,
+            label: logoPayload.label,
+          })
+          return
+        }
+
+        // Fall back to shape or text drop
+        const shapeRaw = e.dataTransfer.getData("application/x-kubecanvas-shape")
+        const textRaw = e.dataTransfer.getData("application/x-kubecanvas-text")
+        const payload = parseShapeDrag(shapeRaw)
+        const textPayload = parseTextDrag(textRaw)
+
+        if (textPayload) {
+          e.preventDefault()
+          e.stopPropagation()
+          addNodeMutation({
+            shape: "rectangle",
+            w: textPayload.w,
+            h: textPayload.h,
+            flowX: position.x,
+            flowY: position.y,
+            label: textPayload.text,
+          })
+          return
+        }
+
         if (!payload) return
 
         e.preventDefault()
         e.stopPropagation()
-
-        // Convert screen → flow coordinates using the viewport DOM state
-        const position = screenToFlowPosition(e.clientX, e.clientY)
 
         addNodeMutation({
           shape: payload.shape,
@@ -663,9 +599,9 @@ function FlowCanvas({
     [addNodeMutation],
   )
 
-  // Native fallback: attach DOM listeners directly to `.react-flow` element.
-  // Some browsers or environment setups prevent React synthetic handlers
-  // from firing reliably; native listeners ensure we capture native drops.
+  // Native fallback: attach DOM listeners to `.react-flow` element with retry.
+  // The ReactFlow element may not exist on first render (Suspense, lazy loading),
+  // so we retry with requestAnimationFrame until it appears.
   const [nativePendingDrop, setNativePendingDrop] = useState<AddNodePayload | null>(null)
 
   useEffect(() => {
@@ -675,75 +611,161 @@ function FlowCanvas({
   }, [nativePendingDrop, addNodeMutation])
 
   useEffect(() => {
-    const rfEl = document.querySelector(".react-flow") as HTMLElement | null
-    if (!rfEl) return
+    let rafId: number | null = null
+    let cleaned = false
 
-    const onNativeDragOver = (ev: Event) => {
-      try {
-        const e: any = ev
-        const types = Array.from((e.dataTransfer && e.dataTransfer.types) || [])
-        console.log("[FlowCanvas native] dragover types:", types)
-        if (types.includes("application/x-kubecanvas-shape") || types.includes("application/x-kubecanvas-logo")) {
-          e.preventDefault()
-          if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"
-        }
-      } catch (err) {
-        // ignore
+    const tryAttach = () => {
+      if (cleaned) return
+      const rfEl = document.querySelector(".react-flow") as HTMLElement | null
+      if (!rfEl) {
+        // Retry until .react-flow appears in the DOM
+        rafId = requestAnimationFrame(tryAttach)
+        return
       }
-    }
 
-    const onNativeDrop = (ev: Event) => {
-      try {
-        const e: any = ev
+      const onNativeDragOver = (ev: Event) => {
+        try {
+          const e: any = ev
+          const types = Array.from((e.dataTransfer && e.dataTransfer.types) || [])
+          if (
+            types.includes("application/x-kubecanvas-shape") ||
+            types.includes("application/x-kubecanvas-logo") ||
+            types.includes("application/x-kubecanvas-text")
+          ) {
+            e.preventDefault()
+            if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"
+          }
+        } catch {
+          // ignore
+        }
+      }
 
-        // Check for logo drop first
-        const logoRaw = (e.dataTransfer && (e.dataTransfer.getData("application/x-kubecanvas-logo") || e.dataTransfer.getData("text/plain"))) || ""
-        const logoPayload = parseLogoDragToCanvas(logoRaw)
-        if (logoPayload) {
+      const onNativeDrop = (ev: Event) => {
+        try {
+          const e: any = ev
+          // Check for logo drop — try custom MIME type, then text/plain fallback
+          const logoRaw =
+            (e.dataTransfer && (
+              e.dataTransfer.getData("application/x-kubecanvas-logo") ||
+              e.dataTransfer.getData("text/plain")
+            )) || ""
+          const logoPayload = parseLogoDragToCanvas(logoRaw)
+          if (logoPayload) {
+            e.preventDefault()
+            e.stopPropagation()
+            // Use the ReactFlow instance from the nearest provider
+            const rfViewport = document.querySelector(".react-flow__viewport") as HTMLElement | null
+            const rfContainer = document.querySelector(".react-flow") as HTMLElement | null
+            if (rfViewport && rfContainer) {
+              const rect = rfContainer.getBoundingClientRect()
+              const transform = rfViewport.style.transform || ""
+              const m = transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)\s*scale\(([-\d.e]+)\)/)
+              const tx = m ? parseFloat(m[1]) : 0
+              const ty = m ? parseFloat(m[2]) : 0
+              const zoom = m ? parseFloat(m[3]) : 1
+              const pos = {
+                x: (e.clientX - rect.left - tx) / zoom,
+                y: (e.clientY - rect.top - ty) / zoom,
+              }
+              setNativePendingDrop({
+                shape: logoShapeForIcon(logoPayload.icon),
+                w: logoPayload.w,
+                h: logoPayload.h,
+                flowX: pos.x,
+                flowY: pos.y,
+                logo: logoPayload.icon,
+                logoCustomSvg: logoPayload.customSvg,
+                label: logoPayload.label,
+              })
+            }
+            return
+          }
+
+          // Fall back to shape or text drop
+          const raw = (e.dataTransfer && (
+            e.dataTransfer.getData("application/x-kubecanvas-shape") ||
+            e.dataTransfer.getData("text/plain")
+          )) || ""
+          const textRaw = (e.dataTransfer && e.dataTransfer.getData("application/x-kubecanvas-text")) || ""
+          const payload = parseShapeDrag(raw)
+          const textPayload = parseTextDrag(textRaw)
+
+          if (textPayload) {
+            e.preventDefault()
+            e.stopPropagation()
+            const rfViewport = document.querySelector(".react-flow__viewport") as HTMLElement | null
+            const rfContainer = document.querySelector(".react-flow") as HTMLElement | null
+            if (rfViewport && rfContainer) {
+              const rect = rfContainer.getBoundingClientRect()
+              const transform = rfViewport.style.transform || ""
+              const m = transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)\s*scale\(([-\d.e]+)\)/)
+              const tx = m ? parseFloat(m[1]) : 0
+              const ty = m ? parseFloat(m[2]) : 0
+              const zoom = m ? parseFloat(m[3]) : 1
+              const pos = {
+                x: (e.clientX - rect.left - tx) / zoom,
+                y: (e.clientY - rect.top - ty) / zoom,
+              }
+              setNativePendingDrop({
+                shape: "rectangle",
+                w: textPayload.w,
+                h: textPayload.h,
+                flowX: pos.x,
+                flowY: pos.y,
+                label: textPayload.text,
+              })
+            }
+            return
+          }
+
+          if (!payload) return
+
           e.preventDefault()
           e.stopPropagation()
-          const pos = screenToFlowPosition(e.clientX, e.clientY)
-          setNativePendingDrop({
-            shape: "rectangle",
-            w: logoPayload.w,
-            h: logoPayload.h,
-            flowX: pos.x,
-            flowY: pos.y,
-            logo: logoPayload.icon,
-            logoCustomSvg: logoPayload.customSvg,
-            label: logoPayload.label,
-          })
-          return
+          const rfViewport = document.querySelector(".react-flow__viewport") as HTMLElement | null
+          const rfContainer = document.querySelector(".react-flow") as HTMLElement | null
+          if (rfViewport && rfContainer) {
+            const rect = rfContainer.getBoundingClientRect()
+            const transform = rfViewport.style.transform || ""
+            const m = transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)\s*scale\(([-\d.e]+)\)/)
+            const tx = m ? parseFloat(m[1]) : 0
+            const ty = m ? parseFloat(m[2]) : 0
+            const zoom = m ? parseFloat(m[3]) : 1
+            const pos = {
+              x: (e.clientX - rect.left - tx) / zoom,
+              y: (e.clientY - rect.top - ty) / zoom,
+            }
+            setNativePendingDrop({
+              shape: payload.shape,
+              w: payload.w,
+              h: payload.h,
+              flowX: pos.x,
+              flowY: pos.y,
+            })
+          }
+        } catch (err) {
+          console.error("[FlowCanvas native drop error]:", err)
         }
-
-        // Fall back to shape drop
-        const raw = (e.dataTransfer && (e.dataTransfer.getData("application/x-kubecanvas-shape") || e.dataTransfer.getData("text/plain"))) || ""
-        console.log("[FlowCanvas native] drop raw:", raw, "client:", e.clientX, e.clientY)
-        const payload = parseShapeDrag(raw)
-        if (!payload) return
-
-        e.preventDefault()
-        e.stopPropagation()
-
-        const pos = screenToFlowPosition(e.clientX, e.clientY)
-        setNativePendingDrop({
-          shape: payload.shape,
-          w: payload.w,
-          h: payload.h,
-          flowX: pos.x,
-          flowY: pos.y,
-        })
-      } catch (err) {
-        console.error("[FlowCanvas native drop error]:", err)
       }
+
+      rfEl.addEventListener("dragover", onNativeDragOver)
+      rfEl.addEventListener("drop", onNativeDrop)
+
+      // Store cleanup refs
+      const cleanup = () => {
+        rfEl.removeEventListener("dragover", onNativeDragOver)
+        rfEl.removeEventListener("drop", onNativeDrop)
+      }
+      ;(window as any).__kubecanvasNativeDropCleanup = cleanup
     }
 
-    rfEl.addEventListener("dragover", onNativeDragOver)
-    rfEl.addEventListener("drop", onNativeDrop)
+    tryAttach()
 
     return () => {
-      rfEl.removeEventListener("dragover", onNativeDragOver)
-      rfEl.removeEventListener("drop", onNativeDrop)
+      cleaned = true
+      if (rafId) cancelAnimationFrame(rafId)
+      const cleanup = (window as any).__kubecanvasNativeDropCleanup
+      if (cleanup) cleanup()
     }
   }, [addNodeMutation])
 
@@ -764,10 +786,12 @@ function FlowCanvas({
       {/* Save status indicator — top-left below navbar */}
       <SaveStatusIndicator status={saveStatus} />
 
-      {/* Collaborator avatars — top-right, hidden when AI sidebar is open */}
-      <div className={`absolute top-16 right-4 z-[61] ${aiSidebarOpen ? "pointer-events-none opacity-0" : ""}`}>
-        <CollaboratorAvatars />
-      </div>
+      {/* Collaborator avatars — top-right (hidden when AI sidebar open) */}
+      {!aiSidebarOpen && (
+        <div className="absolute top-16 right-4 z-[61]">
+          <CollaboratorAvatars />
+        </div>
+      )}
 
       {/* Shape panel + clear — bottom-center */}
       <ShapePanel />
@@ -779,15 +803,7 @@ function FlowCanvas({
         onAddLogo={handleAddLogo}
       />
 
-      {/* AI sidebar — rendered inside RoomProvider so feed hooks work */}
-      <FeedProvider>
-        <AiSidebar
-          isOpen={!!aiSidebarOpen}
-          onClose={onAiSidebarClose ?? (() => {})}
-          projectId={projectId}
-          currentUserId={currentUserId}
-        />
-      </FeedProvider>
+
 
       <div
         className="h-full w-full"
@@ -800,6 +816,8 @@ function FlowCanvas({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
@@ -1192,9 +1210,8 @@ export interface CanvasEditorProps {
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
   currentUserId: string
-  aiSidebarOpen?: boolean
-  onAiSidebarClose?: () => void
   onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
+  aiSidebarOpen?: boolean
 }
 
 export function CanvasEditor({
@@ -1203,9 +1220,8 @@ export function CanvasEditor({
   pendingTemplate,
   onTemplateImported,
   currentUserId,
-  aiSidebarOpen,
-  onAiSidebarClose,
   onSaveApi,
+  aiSidebarOpen,
 }: CanvasEditorProps) {
   return (
     <CanvasError className="h-full w-full">
@@ -1214,12 +1230,14 @@ export function CanvasEditor({
       >
         <RoomProvider
           id={roomId}
-          initialPresence={{ cursor: null, isThinking: false, agentCursor: null }}
+          initialPresence={{ cursor: null, agentCursor: null, isThinking: false }}
           initialStorage={{
             flow: new LiveObject({
               nodes: new LiveMap(),
               edges: new LiveMap(),
             }),
+            agentCursor: null,
+            agentThinking: false,
           }}
         >
           <ClientSideSuspense fallback={<CanvasLoading />}>
@@ -1228,9 +1246,8 @@ export function CanvasEditor({
               pendingTemplate={pendingTemplate}
               onTemplateImported={onTemplateImported}
               currentUserId={currentUserId}
-              aiSidebarOpen={aiSidebarOpen}
-              onAiSidebarClose={onAiSidebarClose}
               onSaveApi={onSaveApi}
+              aiSidebarOpen={aiSidebarOpen}
             />
           </ClientSideSuspense>
         </RoomProvider>

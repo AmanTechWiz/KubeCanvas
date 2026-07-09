@@ -126,15 +126,19 @@ function TemplatePreview({ template }: { template: CanvasTemplate }) {
     switch (handle) {
       case "bottom-source":
       case "bottom-target":
+      case "bottom":
         return { x: cx, y: cy + hh }
       case "top-source":
       case "top-target":
+      case "top":
         return { x: cx, y: cy - hh }
       case "left-source":
       case "left-target":
+      case "left":
         return { x: cx - hw, y: cy }
       case "right-source":
       case "right-target":
+      case "right":
         return { x: cx + hw, y: cy }
       default:
         return { x: cx, y: cy }
@@ -253,19 +257,6 @@ function renderPreviewShape(
         />
       )
     }
-    case "pill":
-      return (
-        <rect
-          x={x}
-          y={y}
-          width={w}
-          height={h}
-          rx={h / 2}
-          fill={color}
-          stroke={stroke}
-          strokeWidth={1}
-        />
-      )
     case "cylinder": {
       const arcH = h * 0.12
       const bodyTop = y + arcH

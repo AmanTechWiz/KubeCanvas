@@ -5,7 +5,6 @@ export type NodeShape =
   | "rectangle"
   | "diamond"
   | "circle"
-  | "pill"
   | "cylinder"
   | "hexagon";
 

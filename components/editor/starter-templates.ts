@@ -39,7 +39,7 @@ const microservicesTemplate: CanvasTemplate = {
   description: "API Gateway with service decomposition and dedicated databases",
   nodes: [
     // Tier 1 — Gateway (centered above services)
-    { id: "gw", label: "API Gateway", shape: "pill", color: "#062822", textColor: "#0AC7B4", x: 312, y: 0, width: 192, height: 80 },
+    { id: "gw", label: "API Gateway", shape: "rectangle", color: "#062822", textColor: "#0AC7B4", x: 312, y: 0, width: 192, height: 128 },
     // Tier 2 — Services
     { id: "auth", label: "Auth Service", shape: "rectangle", color: "#3C1618", textColor: "#FF6166", x: 24, y: 200, width: 192, height: 128 },
     { id: "users", label: "User Service", shape: "rectangle", color: "#10233D", textColor: "#52A8FF", x: 304, y: 200, width: 192, height: 128 },
@@ -51,12 +51,12 @@ const microservicesTemplate: CanvasTemplate = {
   ],
   // Vertical flow: gateway bottom → service top, service bottom → database top
   edges: [
-    { id: "gw-auth", source: "gw", target: "auth", sourceHandle: "bottom-source", targetHandle: "top-target" },
-    { id: "gw-users", source: "gw", target: "users", sourceHandle: "bottom-source", targetHandle: "top-target" },
-    { id: "gw-orders", source: "gw", target: "orders", sourceHandle: "bottom-source", targetHandle: "top-target" },
-    { id: "auth-authdb", source: "auth", target: "auth-db", sourceHandle: "bottom-source", targetHandle: "top-target" },
-    { id: "users-usersdb", source: "users", target: "users-db", sourceHandle: "bottom-source", targetHandle: "top-target" },
-    { id: "orders-ordersdb", source: "orders", target: "orders-db", sourceHandle: "bottom-source", targetHandle: "top-target" },
+    { id: "gw-auth", source: "gw", target: "auth", sourceHandle: "bottom", targetHandle: "top" },
+    { id: "gw-users", source: "gw", target: "users", sourceHandle: "bottom", targetHandle: "top" },
+    { id: "gw-orders", source: "gw", target: "orders", sourceHandle: "bottom", targetHandle: "top" },
+    { id: "auth-authdb", source: "auth", target: "auth-db", sourceHandle: "bottom", targetHandle: "top" },
+    { id: "users-usersdb", source: "users", target: "users-db", sourceHandle: "bottom", targetHandle: "top" },
+    { id: "orders-ordersdb", source: "orders", target: "orders-db", sourceHandle: "bottom", targetHandle: "top" },
   ],
 };
 
@@ -74,7 +74,7 @@ const cicdPipelineTemplate: CanvasTemplate = {
     { id: "build", label: "Build", shape: "rectangle", color: "#10233D", textColor: "#52A8FF", x: 280, y: 100, width: 192, height: 128 },
     { id: "test", label: "Unit Tests", shape: "hexagon", color: "#2E1938", textColor: "#9500ff", x: 560, y: 100, width: 192, height: 128 },
     { id: "staging", label: "Staging", shape: "rectangle", color: "#331B00", textColor: "#FF990A", x: 880, y: 100, width: 192, height: 128 },
-    { id: "deploy", label: "Production", shape: "pill", color: "#062822", textColor: "#0AC7B4", x: 1160, y: 136, width: 192, height: 80 },
+    { id: "deploy", label: "Production", shape: "rectangle", color: "#062822", textColor: "#0AC7B4", x: 1160, y: 136, width: 192, height: 128 },
     // Parallel branch (bottom row)
     { id: "security", label: "Security Scan", shape: "diamond", color: "#3C1618", textColor: "#FF6166", x: 560, y: 320, width: 192, height: 160 },
   ],
@@ -82,12 +82,12 @@ const cicdPipelineTemplate: CanvasTemplate = {
   // Test right → staging left (top), security right → staging left (bottom)
   // Staging right → production left
   edges: [
-    { id: "code-build", source: "code", target: "build", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "build-test", source: "build", target: "test", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "build-security", source: "build", target: "security", sourceHandle: "bottom-source", targetHandle: "top-target" },
-    { id: "test-staging", source: "test", target: "staging", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "security-staging", source: "security", target: "staging", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "staging-deploy", source: "staging", target: "deploy", sourceHandle: "right-source", targetHandle: "left-target" },
+    { id: "code-build", source: "code", target: "build", sourceHandle: "right", targetHandle: "left" },
+    { id: "build-test", source: "build", target: "test", sourceHandle: "right", targetHandle: "left" },
+    { id: "build-security", source: "build", target: "security", sourceHandle: "bottom", targetHandle: "top" },
+    { id: "test-staging", source: "test", target: "staging", sourceHandle: "right", targetHandle: "left" },
+    { id: "security-staging", source: "security", target: "staging", sourceHandle: "right", targetHandle: "left" },
+    { id: "staging-deploy", source: "staging", target: "deploy", sourceHandle: "right", targetHandle: "left" },
   ],
 };
 
@@ -112,12 +112,12 @@ const eventDrivenTemplate: CanvasTemplate = {
   ],
   // Left-to-right flow: producer right → bus left, bus right → consumer left
   edges: [
-    { id: "pa-bus", source: "producer-a", target: "event-bus", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "pb-bus", source: "producer-b", target: "event-bus", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "pc-bus", source: "producer-c", target: "event-bus", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "bus-c1", source: "event-bus", target: "consumer-1", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "bus-c2", source: "event-bus", target: "consumer-2", sourceHandle: "right-source", targetHandle: "left-target" },
-    { id: "bus-c3", source: "event-bus", target: "consumer-3", sourceHandle: "right-source", targetHandle: "left-target" },
+    { id: "pa-bus", source: "producer-a", target: "event-bus", sourceHandle: "right", targetHandle: "left" },
+    { id: "pb-bus", source: "producer-b", target: "event-bus", sourceHandle: "right", targetHandle: "left" },
+    { id: "pc-bus", source: "producer-c", target: "event-bus", sourceHandle: "right", targetHandle: "left" },
+    { id: "bus-c1", source: "event-bus", target: "consumer-1", sourceHandle: "right", targetHandle: "left" },
+    { id: "bus-c2", source: "event-bus", target: "consumer-2", sourceHandle: "right", targetHandle: "left" },
+    { id: "bus-c3", source: "event-bus", target: "consumer-3", sourceHandle: "right", targetHandle: "left" },
   ],
 };
 
