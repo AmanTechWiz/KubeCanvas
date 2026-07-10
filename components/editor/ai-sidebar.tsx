@@ -239,6 +239,25 @@ function ChatTab({
     return null
   }, [messages])
 
+  // Whether there's an active (in-progress) tool call — used to suppress
+  // the global "Thinking…" spinner so we don't show duplicate spinners.
+  const hasActiveToolCall = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any
+      if (msg.role === "assistant") {
+        for (const part of msg.parts ?? []) {
+          if (
+            part.type === "tool-generateArchitecture" &&
+            (part.state === "input-streaming" || part.state === "input-available")
+          ) {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }, [messages])
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
@@ -345,6 +364,7 @@ function ChatTab({
                             className="mx-0 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2"
                           >
                             <SpiralSpinner className="size-3.5 shrink-0" />
+                            <span className="text-xs text-muted-foreground">Preparing architecture...</span>
                           </div>
                         )
                       case "output-available":
@@ -369,8 +389,8 @@ function ChatTab({
           </div>
         ))}
 
-        {/* Loading indicator */}
-        {status === "streaming" && (
+        {/* Loading indicator — hidden when a tool call is active to avoid duplicate spinners */}
+        {status === "streaming" && !hasActiveToolCall && (
           <div className="flex items-center gap-2 px-1">
             <SpiralSpinner className="size-4" />
             <span className="text-xs text-muted-foreground">Thinking...</span>

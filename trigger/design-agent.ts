@@ -1,4 +1,4 @@
-import { task, metadata } from "@trigger.dev/sdk";
+import { task, metadata, wait } from "@trigger.dev/sdk";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { Liveblocks } from "@liveblocks/node";
@@ -51,8 +51,6 @@ for (const cat of LOGO_CATEGORIES) {
     VALID_LOGOS.add(icon.id);
   }
 }
-VALID_LOGOS.add("kong"); // explicit allow for Kong API Gateway
-
 function stripInvalidLogos(arch: Architecture): Architecture {
   return {
     ...arch,
@@ -78,7 +76,8 @@ OUTPUT RULES:
 - Edge labels must be SHORT verbs: "Routes", "Queries", "Publishes", "Writes", "Authenticates". Max 20 chars.
 - Color meanings: neutral=generic, blue=core APIs, purple=AI/ML, orange=cache/queue, red=critical, pink=auth/security, green=databases, teal=external.
 - Shape meanings: rectangle=general, diamond=routing/decisions, circle=triggers/entry, cylinder=storage, hexagon=external.
-- For well-known technologies (PostgreSQL, Redis, Docker, Kubernetes, React, Next.js, etc.), set the logo field to the tech-stack-icons icon name (e.g. "postgresql", "redis", "docker"). Set to null for generic components.
+- For well-known technologies (PostgreSQL, Redis, Docker, Kubernetes, React, Next.js, etc.), set the logo field to a valid icon name (e.g. "postgresql", "redis", "docker"). Set to null for generic components.
+- If you don't know whether a specific brand/technology has an icon, or if it's an obscure tool — set logo to null. The node will render as colored text inside its shape. NEVER guess or make up icon names — invalid names crash the UI.
 - Complexity: 8-15 nodes for simple, 15-25 for standard, 25-40 for complex/production.
 - Do NOT over-engineer simple requests. A blog doesn't need Kafka and Elasticsearch.
 - Do NOT under-engineer complex requests. A production e-commerce platform needs proper infrastructure.
@@ -113,6 +112,7 @@ OUTPUT RULES:
 - Color meanings: neutral=generic, blue=core APIs, purple=AI/ML, orange=cache/queue, red=critical, pink=auth/security, green=databases, teal=external.
 - Shape meanings: rectangle=general, diamond=routing/decisions, circle=triggers/entry, cylinder=storage, hexagon=external.
 - For well-known technologies, set the logo field. Set to null for generic components.
+- If you don't know whether a brand has an icon, set logo to null. NEVER guess or make up icon names — invalid names crash the UI.
 - NEVER output coordinates, sizes, or handle positions.
 
 NEVER output code, scripts, configuration, or terraform.`;
@@ -224,6 +224,25 @@ export const designAgent = task({
     const { prompt, roomId, currentArchitecture } = payload;
     const isModification = !!currentArchitecture && (currentArchitecture.nodes.length > 0 || currentArchitecture.edges.length > 0);
 
+    // ── Detect clear canvas intent ──────────────────────────────────
+    const clearIntent = /\b(clear|reset|empty|wipe|remove all|delete all|clean)\b/i.test(prompt) &&
+      /\b(canvas|board|diagram|architecture|all|everything)\b/i.test(prompt);
+
+    if (clearIntent) {
+      console.log(`[Design Agent] Clear canvas intent detected — clearing room ${roomId}`);
+      await liveblocks.mutateStorage(roomId, async ({ root }) => {
+        root.set("agentThinking", false);
+        root.set("agentCursor", null);
+      });
+      await mutateFlow({ client: liveblocks, roomId }, (flow) => {
+        for (const n of flow.nodes) flow.removeNode(n.id);
+        for (const e of flow.edges) flow.removeEdge(e.id);
+      });
+      console.log(`[Design Agent] Canvas cleared`);
+      metadata.set("phase", "complete");
+      return { status: "completed", nodesCount: 0, edgesCount: 0, mode: "clear" };
+    }
+
     console.log(`[Design Agent] Starting for room ${roomId} (${isModification ? "modification" : "fresh"})`);
     console.log(`[Design Agent] Prompt: ${prompt.slice(0, 200)}`);
 
@@ -302,23 +321,41 @@ export const designAgent = task({
     }
     metadata.set("phase", "applying");
 
-    // ── 5. Apply to Liveblocks ────────────────────────────────────
+    // ── 5. Apply to Liveblocks with step-by-step cursor animation ──
+    //
+    // Each node and edge is added individually so the agent cursor
+    // smoothly glides across the canvas and users can follow along.
+
+    const ANIM_DELAY = 0.25; // seconds between steps
+
+    async function moveCursor(x: number, y: number) {
+      await liveblocks.mutateStorage(roomId, async ({ root }) => {
+        root.set("agentCursor", { x, y });
+      });
+    }
+
     if (isModification) {
       // Diff-based: only apply changes
       const diff = computeDiff(currentArchitecture!, architecture);
       logDiff(diff);
 
-      await mutateFlow({ client: liveblocks, roomId }, (flow) => {
-        // Remove nodes
-        for (const id of diff.removeNodeIds) flow.removeNode(id);
+      // ── Batch removals (no animation needed for vanishing items) ──
+      if (diff.removeNodeIds.length > 0 || diff.removeEdgeIds.length > 0) {
+        await mutateFlow({ client: liveblocks, roomId }, (flow) => {
+          for (const id of diff.removeEdgeIds) flow.removeEdge(id);
+          for (const id of diff.removeNodeIds) flow.removeNode(id);
+        });
+      }
 
-        // Remove edges
-        for (const id of diff.removeEdgeIds) flow.removeEdge(id);
-
-        // Add new nodes
-        for (const node of diff.addNodes) {
-          const layoutNode = layoutNodes.find((n) => n.id === node.id);
-          const color = COLOR_MAP[node.color] ?? COLOR_MAP.neutral;
+      // ── Animate new nodes one by one ─────────────────────────────
+      for (const node of diff.addNodes) {
+        const layoutNode = layoutNodes.find((n) => n.id === node.id);
+        if (layoutNode) {
+          await moveCursor(layoutNode.position.x, layoutNode.position.y);
+          await wait.for({ seconds: ANIM_DELAY });
+        }
+        const color = COLOR_MAP[node.color] ?? COLOR_MAP.neutral;
+        await mutateFlow({ client: liveblocks, roomId }, (flow) => {
           flow.addNode({
             id: node.id,
             type: "canvasNode",
@@ -334,64 +371,106 @@ export const designAgent = task({
               ? { width: layoutNode.measured.width, height: layoutNode.measured.height }
               : {}),
           } as any);
+        });
+      }
+
+      // ── Animate new edges one by one ─────────────────────────────
+      for (const edge of diff.addEdges) {
+        const layoutEdge = layoutEdges.find((e) => e.id === edge.id);
+        // Move cursor to midpoint between source and target
+        const srcLayout = layoutNodes.find((n) => n.id === edge.source);
+        const tgtLayout = layoutNodes.find((n) => n.id === edge.target);
+        if (srcLayout && tgtLayout) {
+          const midX = (srcLayout.position.x + tgtLayout.position.x) / 2;
+          const midY = (srcLayout.position.y + tgtLayout.position.y) / 2;
+          await moveCursor(midX, midY);
+          await wait.for({ seconds: ANIM_DELAY });
+        } else if (srcLayout) {
+          await moveCursor(srcLayout.position.x, srcLayout.position.y);
+          await wait.for({ seconds: ANIM_DELAY });
         }
-
-        // Update existing nodes
-        for (const { id, changes } of diff.updateNodes) {
-          const layoutNode = layoutNodes.find((n) => n.id === id);
-          const nodeData: Record<string, unknown> = {};
-          if (changes.label !== undefined) nodeData.label = changes.label;
-          if (changes.color !== undefined) {
-            const c = COLOR_MAP[changes.color] ?? COLOR_MAP.neutral;
-            nodeData.color = c.bg;
-            nodeData.textColor = c.text;
-          }
-          if (changes.shape !== undefined) nodeData.shape = changes.shape;
-          if (changes.logo !== undefined) nodeData.logo = changes.logo;
-
-          if (Object.keys(nodeData).length > 0) {
-            flow.updateNodeData(id, nodeData as any);
-          }
-          if (layoutNode?.position) {
-            flow.updateNode(id, { position: layoutNode.position } as any);
-          }
-        }
-
-        // Add new edges
-        for (const edge of diff.addEdges) {
-          const layoutEdge = layoutEdges.find((e) => e.id === edge.id);
+        await mutateFlow({ client: liveblocks, roomId }, (flow) => {
           flow.addEdge({
             id: edge.id,
             source: edge.source,
             target: edge.target,
             sourceHandle: layoutEdge?.sourceHandle ?? "bottom",
             targetHandle: layoutEdge?.targetHandle ?? "top",
-            label: edge.label,
             type: "canvasEdge",
+            data: { label: edge.label },
+            label: edge.label,
           } as any);
+        });
+      }
+
+      // ── Batch node updates ───────────────────────────────────────
+      if (diff.updateNodes.length > 0) {
+        // Move cursor to center of all updated nodes
+        if (diff.updateNodes.length > 0) {
+          const avgX =
+            diff.updateNodes.reduce((sum, u) => {
+              const ln = layoutNodes.find((n) => n.id === u.id);
+              return sum + (ln?.position.x ?? 0);
+            }, 0) / diff.updateNodes.length;
+          const avgY =
+            diff.updateNodes.reduce((sum, u) => {
+              const ln = layoutNodes.find((n) => n.id === u.id);
+              return sum + (ln?.position.y ?? 0);
+            }, 0) / diff.updateNodes.length;
+          await moveCursor(avgX, avgY);
+          await wait.for({ seconds: ANIM_DELAY });
         }
-
-        // Update existing edges
-        for (const { id, changes } of diff.updateEdges) {
-          const layoutEdge = layoutEdges.find((e) => e.id === id);
-          const edgeData: Record<string, unknown> = {};
-          if (changes.label !== undefined) edgeData.label = changes.label;
-          if (changes.source !== undefined) edgeData.source = changes.source;
-          if (changes.target !== undefined) edgeData.target = changes.target;
-
-          if (Object.keys(edgeData).length > 0) {
-            flow.updateEdge(id, edgeData as any);
+        await mutateFlow({ client: liveblocks, roomId }, (flow) => {
+          for (const { id, changes } of diff.updateNodes) {
+            const layoutNode = layoutNodes.find((n) => n.id === id);
+            const nodeData: Record<string, unknown> = {};
+            if (changes.label !== undefined) nodeData.label = changes.label;
+            if (changes.color !== undefined) {
+              const c = COLOR_MAP[changes.color] ?? COLOR_MAP.neutral;
+              nodeData.color = c.bg;
+              nodeData.textColor = c.text;
+            }
+            if (changes.shape !== undefined) nodeData.shape = changes.shape;
+            if (changes.logo !== undefined) nodeData.logo = changes.logo;
+            if (Object.keys(nodeData).length > 0) {
+              flow.updateNodeData(id, nodeData as any);
+            }
+            if (layoutNode?.position) {
+              flow.updateNode(id, { position: layoutNode.position } as any);
+            }
           }
-        }
-      });
+        });
+      }
+
+      // ── Batch edge updates ───────────────────────────────────────
+      if (diff.updateEdges.length > 0) {
+        await mutateFlow({ client: liveblocks, roomId }, (flow) => {
+          for (const { id, changes } of diff.updateEdges) {
+            const layoutEdge = layoutEdges.find((e) => e.id === id);
+            const edgeData: Record<string, unknown> = {};
+            if (changes.label !== undefined) edgeData.label = changes.label;
+            if (changes.source !== undefined) edgeData.source = changes.source;
+            if (changes.target !== undefined) edgeData.target = changes.target;
+            if (Object.keys(edgeData).length > 0) {
+              flow.updateEdge(id, edgeData as any);
+            }
+          }
+        });
+      }
     } else {
-      // Fresh: clear everything and write
+      // Fresh: clear everything first
       await mutateFlow({ client: liveblocks, roomId }, (flow) => {
         for (const n of flow.nodes) flow.removeNode(n.id);
         for (const e of flow.edges) flow.removeEdge(e.id);
+      });
 
-        for (const node of layoutNodes) {
-          const color = COLOR_MAP[node.data.color] ?? COLOR_MAP.neutral;
+      // ── Animate nodes one by one ─────────────────────────────────
+      for (const node of layoutNodes) {
+        await moveCursor(node.position.x, node.position.y);
+        await wait.for({ seconds: ANIM_DELAY });
+
+        const color = COLOR_MAP[node.data.color] ?? COLOR_MAP.neutral;
+        await mutateFlow({ client: liveblocks, roomId }, (flow) => {
           flow.addNode({
             id: node.id,
             type: node.type,
@@ -407,20 +486,37 @@ export const designAgent = task({
               ? { width: node.measured.width, height: node.measured.height }
               : {}),
           } as any);
+        });
+      }
+
+      // ── Animate edges one by one ─────────────────────────────────
+      for (const edge of layoutEdges) {
+        // Move cursor to midpoint between source and target
+        const srcLayout = layoutNodes.find((n) => n.id === edge.source);
+        const tgtLayout = layoutNodes.find((n) => n.id === edge.target);
+        if (srcLayout && tgtLayout) {
+          const midX = (srcLayout.position.x + tgtLayout.position.x) / 2;
+          const midY = (srcLayout.position.y + tgtLayout.position.y) / 2;
+          await moveCursor(midX, midY);
+          await wait.for({ seconds: ANIM_DELAY });
+        } else if (srcLayout) {
+          await moveCursor(srcLayout.position.x, srcLayout.position.y);
+          await wait.for({ seconds: ANIM_DELAY });
         }
 
-        for (const edge of layoutEdges) {
+        await mutateFlow({ client: liveblocks, roomId }, (flow) => {
           flow.addEdge({
             id: edge.id,
             source: edge.source,
             target: edge.target,
             sourceHandle: edge.sourceHandle,
             targetHandle: edge.targetHandle,
-            label: edge.label,
             type: edge.type,
+            data: { label: edge.label },
+            label: edge.label,
           } as any);
-        }
-      });
+        });
+      }
     }
 
     console.log(`[Design Agent] Canvas updated successfully`);

@@ -58,9 +58,12 @@ function CanvasEdgeInner(props: EdgeProps) {
   const isActive = hovered || !!selected
 
   // ── Label editing state ─────────────────────────────────────────
-  const label = (data as Record<string, unknown> | undefined)?.label as
-    | string
-    | undefined
+  // Read label from data.label (stored by mutateFlow) or props.label
+  // (set at top-level by layout/React Flow). Liveblocks may store the
+  // label as a top-level atomic field rather than inside data.
+  const label = (
+    (data as Record<string, unknown> | undefined)?.label as string | undefined
+  ) ?? (props as Record<string, unknown> | undefined)?.label as string | undefined
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(label || "")
   const inputRef = useRef<HTMLInputElement>(null)

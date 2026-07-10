@@ -69,11 +69,12 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- fix AI cursor: spawns on canvas but disappears too quickly — needs to animate through node positions during generation instead of pop-in/pop-out
+- Phase 2 complete — all core product features implemented and known issues resolved
 
 ## Next Up
 
-- feature [42] — AI cursor smooth animation through node positions
+- feature [43] — Phase 3: Performance, error handling, deployment, edge cases
+- feature [44] — Production deployment + CI/CD pipeline
 
 ## Open Questions
 

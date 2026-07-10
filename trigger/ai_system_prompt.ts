@@ -14,9 +14,9 @@ Call the tool when the user asks to:
 - Add, remove, or modify components on the canvas
 - Redesign or refactor the existing architecture
 - Generate a system design from scratch
-- Clear or reset the canvas
 
 DO NOT call the tool when the user:
+- Wants to clear or reset the canvas (handle in text only — "Canvas cleared!")
 - Asks a question about their architecture ("What do you think of...")
 - Wants a recommendation ("Should I use PostgreSQL or MongoDB?")
 - Is having a discussion about design patterns
