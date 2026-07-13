@@ -20,10 +20,10 @@ no API routes, no external services.
 can draw a database as a green rectangle, a pink circle, or a blue hexagon.
 The validator cannot guess a node's role from its appearance.
 
-Instead, detection uses **logo first, label second**:
+Instead, detection uses **label/text first, logo second**:
 
-1. If a node has a `logo` matching a known technology → classified
-2. If a node's `label` contains a recognizable technology name → classified
+1. If a node's `label` contains a recognizable technology name → classified
+2. If a node has a `logo` matching a known technology → classified
 3. Otherwise → unclassified
 
 A node is classified into one of these roles: `database`, `cache`, `queue`,
@@ -79,8 +79,8 @@ const CLASSIFIERS = {
 ```
 
 Detection logic:
-1. Check `node.data.logo` against the logo list (case-insensitive)
-2. Check `node.data.label` against the keyword list (case-insensitive)
+1. Check `node.data.label` against the keyword list (case-insensitive)
+2. Check `node.data.logo` against the logo list (case-insensitive)
 3. If neither matches → node is `unclassified`
 
 ## Validation Gate
