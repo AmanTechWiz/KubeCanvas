@@ -2,13 +2,16 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from "react"
 import ReactDOM from "react-dom"
-import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2 } from "lucide-react"
+import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { SpiralSpinner } from "@/components/ui/spiral-spinner"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import { useRealtimeRun } from "@trigger.dev/react-hooks"
 import { renderFormattedText } from "@/lib/format-chat"
+import { Z } from "@/lib/z-index"
+
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -19,53 +22,51 @@ interface AiSidebarProps {
   currentUserId: string
 }
 
-// ── Spiral Spinner ──────────────────────────────────────────────────
-
-function SpiralSpinner({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 56 56"
-      role="img"
-      aria-label="Thinking"
-      className={className}
-    >
-      <defs>
-        <circle id="sp-bg" r="2.4" fill="#ffffff" opacity="0.07" />
-        <circle id="sp-dot" r="3.1" />
-      </defs>
-      <style>{`
-        .sp{fill:#ffffff;opacity:0;animation:sp-k 2800ms cubic-bezier(0.25,1,0.5,1) infinite both;}
-        @keyframes sp-k{0%{opacity:0;}4%{opacity:1;}26%{opacity:0.08;}100%{opacity:0;}}
-        @media(prefers-reduced-motion:reduce){.sp{animation:none;opacity:0.45;}}
-        .d00{animation-delay:2221ms;}.d01{animation-delay:2317ms;}.d02{animation-delay:869ms;}.d03{animation-delay:966ms;}.d04{animation-delay:1062ms;}
-        .d10{animation-delay:2124ms;}.d11{animation-delay:772ms;}.d12{animation-delay:97ms;}.d13{animation-delay:193ms;}.d14{animation-delay:1159ms;}
-        .d20{animation-delay:2028ms;}.d21{animation-delay:676ms;}.d22{animation-delay:0ms;}.d23{animation-delay:290ms;}.d24{animation-delay:1255ms;}
-        .d30{animation-delay:1931ms;}.d31{animation-delay:579ms;}.d32{animation-delay:483ms;}.d33{animation-delay:386ms;}.d34{animation-delay:1352ms;}
-        .d40{animation-delay:1834ms;}.d41{animation-delay:1738ms;}.d42{animation-delay:1641ms;}.d43{animation-delay:1545ms;}.d44{animation-delay:1448ms;}
-      `}</style>
-      {[6,17,28,39,50].map(x => [6,17,28,39,50].map(y => (
-        <use key={`bg-${x}-${y}`} href="#sp-bg" x={x} y={y} />
-      )))}
-      {[
-        [6,6,"d00"],[17,6,"d01"],[28,6,"d02"],[39,6,"d03"],[50,6,"d04"],
-        [6,17,"d10"],[17,17,"d11"],[28,17,"d12"],[39,17,"d13"],[50,17,"d14"],
-        [6,28,"d20"],[17,28,"d21"],[28,28,"d22"],[39,28,"d23"],[50,28,"d24"],
-        [6,39,"d30"],[17,39,"d31"],[28,39,"d32"],[39,39,"d33"],[50,39,"d34"],
-        [6,50,"d40"],[17,50,"d41"],[28,50,"d42"],[39,50,"d43"],[50,50,"d44"],
-      ].map(([x, y, cls]) => (
-        <use key={`d-${x}-${y}`} className={`sp ${cls}`} href="#sp-dot" x={x} y={y} />
-      ))}
-    </svg>
-  )
-}
-
 // ── Architect Status Card ───────────────────────────────────────────
 
-function ArchitectStatusCard({ runId }: { runId: string }) {
-  const { run } = useRealtimeRun(runId)
-  const status = run?.status
+function ArchitectStatusCard({
+  runId,
+  onComplete,
+}: {
+  runId: string
+  onComplete?: (run: any) => void
+}) {
+  const [accessToken, setAccessToken] = useState<string | undefined>(undefined)
   const [cancelling, setCancelling] = useState(false)
+
+  // Fetch a Trigger.dev public token scoped to this run
+  useEffect(() => {
+    if (!runId) return
+    let cancelled = false
+    fetch("/api/ai/design/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.token) {
+          setAccessToken(data.token)
+        }
+      })
+      .catch(() => {
+        // Token fetch failure — useRealtimeRun will error cleanly
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [runId])
+
+  const { run } = useRealtimeRun(runId, {
+    accessToken,
+    enabled: !!accessToken,
+    onComplete: (completedRun, err) => {
+      if (!err && completedRun?.status === "COMPLETED") {
+        onComplete?.(completedRun)
+      }
+    },
+  })
+  const status = run?.status
 
   const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
   const isRunning = !isDone && status !== undefined
@@ -93,29 +94,77 @@ function ArchitectStatusCard({ runId }: { runId: string }) {
 
   return (
     <div className="mx-0 mb-1 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2">
-      {!isDone ? (
-        <SpiralSpinner className="size-4 shrink-0" />
-      ) : status === "COMPLETED" ? (
-        <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-success)]" />
-      ) : status === "CANCELED" ? (
-        <span className="inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground" />
-      ) : (
-        <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-error)]" />
-      )}
-      <span className="text-xs font-medium text-muted-foreground flex-1">
-        {label}
-      </span>
-      {isRunning && !cancelling && (
+            {!isDone ? (
+              <SpiralSpinner className="size-4 shrink-0" />
+            ) : status === "COMPLETED" ? (
+              <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-success)]" />
+            ) : status === "CANCELED" ? (
+              <span className="inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+            ) : (
+              <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-error)]" />
+            )}
+            <span className="text-xs font-medium text-muted-foreground flex-1">
+              {label}
+            </span>
+            {isRunning && !cancelling && (
+              <button
+                onClick={handleCancel}
+                className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+            {cancelling && (
+              <span className="text-[10px] text-muted-foreground">Cancelling...</span>
+            )}
+    </div>
+  )
+}
+
+// ── Architecture Confirm Card ───────────────────────────────────────
+
+function ArchitectureConfirmCard({
+  prompt,
+  messageId,
+  onApply,
+  onDismiss,
+}: {
+  prompt: string
+  messageId: string
+  onApply: (prompt: string, messageId: string) => void
+  onDismiss: (messageId: string) => void
+}) {
+  const [applying, setApplying] = useState(false)
+
+  const handleApply = useCallback(() => {
+    setApplying(true)
+    onApply(prompt, messageId)
+  }, [prompt, messageId, onApply])
+
+  return (
+    <div className="mx-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+      <p className="text-xs font-medium text-amber-400/90 mb-2">
+        ⚠ Architecture changes cannot be undone
+      </p>
+      <p className="text-[11px] leading-relaxed text-muted-foreground mb-3 line-clamp-3">
+        {prompt}
+      </p>
+      <div className="flex gap-2">
         <button
-          onClick={handleCancel}
-          className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          onClick={handleApply}
+          disabled={applying}
+          className="cursor-pointer rounded-lg bg-amber-500/20 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
         >
-          Cancel
+          {applying ? "Starting..." : "Apply changes"}
         </button>
-      )}
-      {cancelling && (
-        <span className="text-[10px] text-muted-foreground">Cancelling...</span>
-      )}
+        <button
+          onClick={() => onDismiss(messageId)}
+          disabled={applying}
+          className="cursor-pointer rounded-lg border border-white/[0.08] px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+        >
+          Skip
+        </button>
+      </div>
     </div>
   )
 }
@@ -134,6 +183,14 @@ function ChatTab({
   const [input, setInput] = useState("")
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadedProjectRef = useRef<string | null>(null)
+  const [archRuns, setArchRuns] = useState<Map<string, string>>(new Map())
+  const dismissedRef = useRef<Set<string>>(new Set())
+  const [completedArchitectTexts, setCompletedArchitectTexts] = useState<
+    Map<string, string>
+  >(new Map())
+  const archRunsRef = useRef(archRuns)
+  archRunsRef.current = archRuns
+
 
   const { messages, sendMessage, status, setMessages, stop } = useChat({
     transport: new DefaultChatTransport({
@@ -141,7 +198,7 @@ function ChatTab({
       body: { projectId },
     }),
     onFinish: ({ message, messages: allMessages }) => {
-      // Save to localStorage
+      // Save to localStorage (with original content including AI text)
       try {
         localStorage.setItem(
           `chat-${projectId}-${currentUserId}`,
@@ -156,6 +213,7 @@ function ChatTab({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: message.id,
           projectId,
           role: message.role,
           content: textContent,
@@ -229,9 +287,9 @@ function ChatTab({
           if (
             part.type === "tool-generateArchitecture" &&
             part.state === "output-available" &&
-            part.result?.runId
+            part.output?.runId
           ) {
-            return part.result.runId as string
+            return part.output.runId as string
           }
         }
       }
@@ -281,6 +339,125 @@ function ChatTab({
     sendMessage({ text })
   }, [input, status, sendMessage, projectId])
 
+  const handleApplyArchitecture = useCallback(
+    async (prompt: string, messageId: string) => {
+      try {
+        const res = await fetch("/api/ai/design", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, projectId }),
+        })
+        if (!res.ok) throw new Error("Failed to start architecture generation")
+        const data = await res.json()
+
+        setMessages((prevMessages) => {
+          const updated = prevMessages.map((m) => {
+            if (m.id !== messageId) return m
+            return {
+              ...m,
+              parts: m.parts?.map((p: any) => {
+                if (p.type === "tool-generateArchitecture") {
+                  return {
+                    ...p,
+                    output: {
+                      ...p.output,
+                      runId: data.runId,
+                      confirmed: true,
+                    },
+                  }
+                }
+                return p
+              }),
+            }
+          })
+          try {
+            localStorage.setItem(
+              `chat-${projectId}-${currentUserId}`,
+              JSON.stringify(updated),
+            )
+          } catch {}
+
+          const updatedMsg = updated.find((m) => m.id === messageId)
+          if (updatedMsg?.parts) {
+            fetch("/api/ai/chat/messages", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                projectId,
+                messageId,
+                parts: updatedMsg.parts,
+              }),
+            }).catch(() => {})
+          }
+
+          return updated
+        })
+
+        setArchRuns((prev) => {
+          const next = new Map(prev)
+          next.set(messageId, data.runId)
+          return next
+        })
+      } catch {
+        // Tool call stays in requiresConfirmation state; user can retry
+      }
+    },
+    [projectId, currentUserId, setMessages],
+  )
+
+  const handleArchitectComplete = useCallback(
+    (messageId: string, _run: any) => {
+      setCompletedArchitectTexts((prev) => {
+        const next = new Map(prev)
+        next.set(messageId, "completed")
+        return next
+      })
+
+      setMessages((prevMessages) => {
+        const updated = prevMessages.map((m) => {
+          if (m.id !== messageId) return m
+          return {
+            ...m,
+            parts: m.parts?.map((p: any) => {
+              if (p.type === "tool-generateArchitecture") {
+                return {
+                  ...p,
+                  output: {
+                    ...p.output,
+                    isCompleted: true,
+                  },
+                }
+              }
+              return p
+            }),
+          }
+        })
+        try {
+          localStorage.setItem(
+            `chat-${projectId}-${currentUserId}`,
+            JSON.stringify(updated),
+          )
+        } catch {}
+
+        const updatedMsg = updated.find((m) => m.id === messageId)
+        if (updatedMsg?.parts) {
+          fetch("/api/ai/chat/messages", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId,
+              messageId,
+              parts: updatedMsg.parts,
+            }),
+          }).catch(() => {})
+        }
+
+        return updated
+      })
+    },
+    [projectId, currentUserId, setMessages],
+  )
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -297,7 +474,7 @@ function ChatTab({
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.06]">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.04] border border-white/[0.06]">
               <Bot className="size-6 text-[var(--accent-primary)]" />
             </div>
             <div>
@@ -320,7 +497,7 @@ function ChatTab({
                     setInput(chip)
                     setTimeout(() => handleSend(), 50)
                   }}
-                  className="cursor-pointer rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
+                  className="cursor-pointer rounded-full bg-white/[0.04] border border-white/[0.06] px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
                 >
                   {chip}
                 </button>
@@ -333,7 +510,7 @@ function ChatTab({
           <div key={message.id}>
             {(message as any).role === "user" ? (
               <div className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-[var(--accent-primary)]/15 px-3 py-2 text-sm text-foreground">
+                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-[var(--accent-primary)]/15 border border-[var(--accent-primary)]/10 px-3 py-2 text-sm text-foreground">
                   {renderFormattedText(
                     (message as any).parts
                       ?.filter((p: any) => p.type === "text")
@@ -344,46 +521,145 @@ function ChatTab({
               </div>
             ) : (
               <div className="flex flex-col gap-1">
-                {(message as any).parts?.map((part: any, i: number) => {
-                  if (part.type === "text") {
-                    return (
-                      <div key={i} className="max-w-[85%]">
-                        <div className="rounded-2xl rounded-bl-md bg-white/[0.06] px-3 py-2 text-sm text-foreground">
-                          {renderFormattedText(part.text)}
+                {(() => {
+                  // If this message has a tool-generateArchitecture part, skip rendering
+                  // text parts during streaming to prevent a flash of "I'll build..."
+                  // before the confirmation card takes over.
+                  const rawMsg = message as any
+                  const hasArchTool = rawMsg.parts?.some(
+                    (p: any) => p.type === "tool-generateArchitecture",
+                  )
+                  return rawMsg.parts?.map((part: any, i: number) => {
+                    if (part.type === "text") {
+                      if (hasArchTool) {
+                        const toolPart = rawMsg.parts?.find(
+                          (p: any) => p.type === "tool-generateArchitecture"
+                        )
+                        const isCompleted = toolPart?.output?.isCompleted || completedArchitectTexts.has(message.id)
+                        if (!isCompleted) return null
+                      }
+                      return (
+                        <div key={i} className="max-w-[85%]">
+                          <div className="rounded-2xl rounded-bl-md bg-white/[0.06] border border-white/[0.06] px-3 py-2 text-sm text-foreground">
+                            {renderFormattedText(part.text)}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  }
-                  if (part.type === "tool-generateArchitecture") {
-                    switch (part.state) {
-                      case "input-streaming":
-                      case "input-available":
-                        return (
-                          <div
-                            key={i}
-                            className="mx-0 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2"
-                          >
-                            <SpiralSpinner className="size-3.5 shrink-0" />
-                            <span className="text-xs text-muted-foreground">Preparing architecture...</span>
-                          </div>
-                        )
-                      case "output-available":
-                        return part.result?.runId ? (
-                          <ArchitectStatusCard
-                            key={`run-${part.result.runId}`}
-                            runId={part.result.runId}
-                          />
-                        ) : null
-                      case "output-error":
-                        return (
-                          <div key={i} className="text-xs text-[var(--state-error)] px-1">
-                            Generation failed: {part.errorText}
-                          </div>
-                        )
+                      );
                     }
-                  }
-                  return null
-                })}
+                    if (part.type === "tool-generateArchitecture") {
+                      switch (part.state) {
+                        case "input-streaming":
+                        case "input-available":
+                          return (
+                            <div
+                              key={i}
+                              className="mx-0 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2"
+                            >
+                              <SpiralSpinner className="size-3.5 shrink-0" />
+                              <span className="text-xs text-muted-foreground">Preparing architecture...</span>
+                            </div>
+                          )
+                        case "output-available":
+                          // Confirmation required before triggering the design agent
+                          if (part.output?.requiresConfirmation) {
+                            const isDismissed = part.output.dismissed || dismissedRef.current.has(message.id)
+                            if (isDismissed) return null
+
+                            // Already completed — card was dismissed, only the text stays
+                            if (part.output.isCompleted) return null
+
+                            const runId = part.output.runId || archRuns.get(message.id)
+                            const isConfirmed = part.output.confirmed || archRuns.has(message.id)
+
+                            if (isConfirmed && runId) {
+                              return (
+                                <div key={`run-${runId}`} className="flex flex-col gap-1">
+                                  <ArchitectStatusCard
+                                    runId={runId}
+                                    onComplete={(run) =>
+                                      handleArchitectComplete(message.id, run)
+                                    }
+                                  />
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <ArchitectureConfirmCard
+                                key={`confirm-${message.id}`}
+                                prompt={part.output.prompt}
+                                messageId={message.id}
+                                onApply={handleApplyArchitecture}
+                                onDismiss={(id) => {
+                                  // Update state & persist dismissed: true
+                                  setMessages((prevMessages) => {
+                                    const updated = prevMessages.map((m) => {
+                                      if (m.id !== id) return m
+                                      return {
+                                        ...m,
+                                        parts: m.parts?.map((p: any) => {
+                                          if (p.type === "tool-generateArchitecture") {
+                                            return {
+                                              ...p,
+                                              output: {
+                                                ...p.output,
+                                                dismissed: true,
+                                              },
+                                            }
+                                          }
+                                          return p
+                                        }),
+                                      }
+                                    })
+                                    try {
+                                      localStorage.setItem(
+                                        `chat-${projectId}-${currentUserId}`,
+                                        JSON.stringify(updated),
+                                      )
+                                    } catch {}
+
+                                    const updatedMsg = updated.find((m) => m.id === id)
+                                    if (updatedMsg?.parts) {
+                                      fetch("/api/ai/chat/messages", {
+                                        method: "PATCH",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({
+                                          projectId,
+                                          messageId: id,
+                                          parts: updatedMsg.parts,
+                                        }),
+                                      }).catch(() => {})
+                                    }
+
+                                    return updated
+                                  })
+
+                                  const next = new Set(dismissedRef.current)
+                                  next.add(id)
+                                  dismissedRef.current = next
+                                  setArchRuns(new Map(archRuns))
+                                }}
+                              />
+                            )
+                          }
+                          // Legacy: tool already triggered the agent (fallback)
+                          return part.output?.runId ? (
+                            <ArchitectStatusCard
+                              key={`run-${part.output.runId}`}
+                              runId={part.output.runId}
+                            />
+                          ) : null
+                        case "output-error":
+                          return (
+                            <div key={i} className="text-xs text-[var(--state-error)] px-1">
+                              Generation failed: {part.errorText}
+                            </div>
+                          )
+                      }
+                    }
+                    return null
+                  })
+                })()}
               </div>
             )}
           </div>
@@ -399,7 +675,7 @@ function ChatTab({
       </div>
 
       {/* Input area */}
-      <div className="shrink-0 border-t border-white/[0.08] p-3">
+      <div className="shrink-0 border-t border-white/[0.06] p-3">
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -407,7 +683,7 @@ function ChatTab({
           }}
           className="flex items-end gap-2"
         >
-          <div className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 focus-within:border-[var(--accent-primary)]/30">
+          <div className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.06] px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/30">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -428,7 +704,7 @@ function ChatTab({
             size="icon-sm"
             variant="ghost"
             disabled={!input.trim() || status === "streaming"}
-            className="cursor-pointer shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:text-[var(--accent-primary)] disabled:opacity-30"
+            className="cursor-pointer shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] text-muted-foreground hover:text-[var(--accent-primary)] hover:bg-white/[0.1] disabled:opacity-30"
           >
             {status === "streaming" ? (
               <Loader2 className="size-4 animate-spin" />
@@ -442,7 +718,7 @@ function ChatTab({
               size="icon-sm"
               variant="ghost"
               onClick={stop}
-              className="cursor-pointer shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:text-[var(--state-error)]"
+              className="cursor-pointer shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] text-muted-foreground hover:text-[var(--state-error)] hover:bg-white/[0.1]"
             >
               <StopCircle className="size-4" />
             </Button>
@@ -453,23 +729,284 @@ function ChatTab({
   )
 }
 
+// ── Spec Export Status Card ────────────────────────────────────────
+
+function SpecExportStatusCard({
+  runId,
+  onComplete,
+}: {
+  runId: string
+  onComplete?: (exportId: string) => void
+}) {
+  const [accessToken, setAccessToken] = useState<string | undefined>(undefined)
+  const [cancelling, setCancelling] = useState(false)
+
+  // Fetch a Trigger.dev public token scoped to this run
+  useEffect(() => {
+    if (!runId) return
+    let cancelled = false
+    fetch("/api/ai/export-spec/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.token) {
+          setAccessToken(data.token)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [runId])
+
+  const { run } = useRealtimeRun(runId, {
+    accessToken,
+    enabled: !!accessToken,
+    onComplete: (completedRun, err) => {
+      if (!err && completedRun?.status === "COMPLETED") {
+        const output = completedRun.output as any
+        if (output?.exportId) {
+          onComplete?.(output.exportId)
+        }
+      }
+    },
+  })
+
+  const status = run?.status
+  const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
+  const isRunning = !isDone && status !== undefined
+
+  const phase = String((run as any)?.metadata?.phase ?? "")
+
+  const phaseLabel =
+    phase === "reading"
+      ? "Reading Architecture..."
+      : phase === "analyzing"
+      ? "Analyzing Components..."
+      : phase === "generating"
+      ? "Generating Specifications..."
+      : phase === "packaging"
+      ? "Packaging Files..."
+      : phase === "complete"
+      ? "Complete"
+      : isDone
+      ? status === "COMPLETED"
+        ? "Complete"
+        : "Failed"
+      : "Starting..."
+
+  const handleCancel = useCallback(async () => {
+    setCancelling(true)
+    try {
+      await fetch("/api/ai/design/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ triggerDevRunId: runId }),
+      })
+    } catch {}
+  }, [runId])
+
+  return (
+    <div className="mx-0 mb-1 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+      {!isDone ? (
+        <SpiralSpinner className="size-4 shrink-0" />
+      ) : status === "COMPLETED" ? (
+        <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-success)]" />
+      ) : status === "CANCELED" ? (
+        <span className="inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+      ) : (
+        <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-error)]" />
+      )}
+      <span className="text-xs font-medium text-muted-foreground flex-1">
+        {phaseLabel}
+      </span>
+      {isRunning && !cancelling && (
+        <button
+          onClick={handleCancel}
+          className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Cancel
+        </button>
+      )}
+      {cancelling && (
+        <span className="text-[10px] text-muted-foreground">Cancelling...</span>
+      )}
+    </div>
+  )
+}
+
 // ── Specs Tab ───────────────────────────────────────────────────────
 
-function SpecsTab() {
+function SpecsTab({ projectId }: { projectId: string }) {
+  const [runId, setRunId] = useState<string | null>(null)
+  const [exportId, setExportId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleExport = useCallback(async () => {
+    setError(null)
+    setExportId(null)
+
+    try {
+      const res = await fetch("/api/ai/export-spec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to start export")
+      }
+
+      const data = await res.json()
+      setRunId(data.runId)
+    } catch (err: any) {
+      setError(err.message || "Failed to start export")
+    }
+  }, [projectId])
+
+  const handleComplete = useCallback((id: string) => {
+    setExportId(id)
+  }, [])
+
+  const handleDownload = useCallback(() => {
+    if (!exportId) return
+    window.open(`/api/ai/export-spec/${exportId}`, "_blank")
+  }, [exportId])
+
+  const handleReset = useCallback(() => {
+    setRunId(null)
+    setExportId(null)
+    setError(null)
+  }, [])
+
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-      <div className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.06]">
-        <MessageSquare className="size-6 text-muted-foreground" />
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-foreground">Coming soon</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          AI-powered spec generation is on its way.
+    <div className="flex h-full flex-col p-3">
+      {/* Header */}
+      <div className="mb-3">
+        <div className="flex items-center gap-2 mb-1">
+          <Package className="size-4 text-[var(--accent-primary)]" />
+          <span className="text-sm font-semibold text-foreground">
+            AI Implementation Pack
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Export your architecture as a structured implementation package
+          optimized for AI coding agents.
         </p>
+      </div>
+
+      {/* Content area */}
+      <div className="flex-1 overflow-y-auto">
+        {!runId && !exportId && (
+          <>
+            {/* Files list */}
+            <div className="mb-4 space-y-1.5">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                Generated files
+              </p>
+              {[
+                { name: "architecture.json", desc: "Canonical source of truth" },
+                { name: "SPEC.md", desc: "Architecture specification" },
+                { name: "IMPLEMENTATION_PLAN.md", desc: "Phased build guide" },
+                { name: "IMPLEMENTATION_QUESTIONS.md", desc: "Developer interview" },
+                { name: "IMPLEMENTATION_GUARDRAILS.md", desc: "Architectural invariants" },
+              ].map((file) => (
+                <div
+                  key={file.name}
+                  className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5"
+                >
+                  <FileText className="size-3.5 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-foreground truncate">
+                      {file.name}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      {file.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Export button */}
+            <Button
+              onClick={handleExport}
+              className="w-full cursor-pointer rounded-xl bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-semibold text-xs"
+            >
+              <Package className="mr-1.5 size-3.5" />
+              Export AI Spec
+            </Button>
+          </>
+        )}
+
+        {/* In-progress state */}
+        {runId && !exportId && (
+          <div className="space-y-3">
+            <SpecExportStatusCard
+              runId={runId}
+              onComplete={handleComplete}
+            />
+            <p className="text-[10px] text-muted-foreground text-center">
+              Generating 5 files in parallel using Gemini Flash...
+            </p>
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div className="mt-2 rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-3 py-2">
+            <p className="text-xs text-[var(--state-error)]">{error}</p>
+            <button
+              onClick={handleReset}
+              className="cursor-pointer mt-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {/* Complete state */}
+        {exportId && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-3 py-2.5">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="inline-block size-1.5 rounded-full bg-[var(--state-success)]" />
+                <span className="text-xs font-medium text-[var(--state-success)]">
+                  Export complete
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                5 files generated and packaged for your coding agent.
+              </p>
+            </div>
+
+            <Button
+              onClick={handleDownload}
+              className="w-full cursor-pointer rounded-xl bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-semibold text-xs"
+            >
+              <Download className="mr-1.5 size-3.5" />
+              Download ZIP
+            </Button>
+
+            <button
+              onClick={handleReset}
+              className="cursor-pointer w-full text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Generate another
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
+
+
 
 // ── AI Sidebar ──────────────────────────────────────────────────────
 
@@ -486,7 +1023,7 @@ export function AiSidebar({
 
   return (
     <div
-      className="fixed right-2 top-[56px] bottom-2 z-50 flex w-80 flex-col rounded-2xl border border-white/[0.08] bg-white/[0.08] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_24px_rgba(0,0,0,0.3),inset_0_0.5px_0_rgba(255,255,255,0.06)]"
+      className="fixed right-2 top-[56px] bottom-2 z-50 flex w-80 max-w-[calc(100vw-1rem)] flex-col rounded-2xl border border-white/[0.08] bg-white/[0.08] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_24px_rgba(0,0,0,0.3),inset_0_0.5px_0_rgba(255,255,255,0.06)]"
     >
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] px-3">
@@ -561,7 +1098,7 @@ export function AiSidebar({
           value="specs"
           className="mt-0 flex-1 overflow-hidden"
         >
-          <SpecsTab />
+          <SpecsTab projectId={projectId} />
         </TabsContent>
       </Tabs>
 

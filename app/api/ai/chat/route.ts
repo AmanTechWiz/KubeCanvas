@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { streamText, tool, convertToModelMessages, isStepCount, smoothStream } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { tasks } from "@trigger.dev/sdk";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
@@ -186,51 +185,17 @@ export async function POST(request: Request) {
               ),
           }),
           execute: async ({ prompt }) => {
-            console.log("[AI Chat] generateArchitecture tool called — triggering design agent...");
+            console.log("[AI Chat] generateArchitecture tool called — prompting user for confirmation...");
             console.log("[AI Chat] Prompt:", prompt.slice(0, 200));
 
-            try {
-              // Pass current canvas state so the agent can do diff-based modifications
-              // instead of full clear+rewrite. This preserves user-placed nodes.
-              const currentNodes = canvasState.nodes.map((n) => ({
-                id: n.id,
-                label: n.label,
-                shape: n.shape,
-                color: n.color,
-                logo: n.logo,
-              }));
-              const currentEdges = canvasState.edges.map((e) => ({
-                id: e.id,
-                source: e.source,
-                target: e.target,
-                label: e.label,
-              }));
-
-              const handle = await tasks.trigger("design-agent", {
-                prompt,
-                roomId: projectId,
-                projectId,
-                currentArchitecture:
-                  currentNodes.length > 0 || currentEdges.length > 0
-                    ? { nodes: currentNodes, edges: currentEdges }
-                    : undefined,
-              });
-
-              console.log("[AI Chat] Design agent triggered:", { runId: handle.id });
-
-              return {
-                runId: handle.id,
-                status: "triggered",
-                message:
-                  "Architecture generation started. You'll see changes appear on your canvas in real time.",
-              };
-            } catch (err) {
-              console.error("[AI Chat] generateArchitecture tool error:", err);
-              return {
-                status: "failed",
-                message: `Could not start architecture generation: ${err instanceof Error ? err.message : "Unknown error"}. Please try again.`,
-              };
-            }
+            // Return a confirmation request instead of executing immediately.
+            // The client shows a yes/no confirmation card warning that changes cannot be undone.
+            // On confirm, the client calls POST /api/ai/design to actually trigger the agent.
+            return {
+              requiresConfirmation: true,
+              prompt,
+              projectId,
+            };
           },
         }),
       },

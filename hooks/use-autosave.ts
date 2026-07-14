@@ -62,7 +62,8 @@ export function useAutosave({
     [onStatusChange],
   );
 
-  const save = useCallback(async () => {
+  /** Internal: single save attempt — returns true on success */
+  const attemptSave = useCallback(async (): Promise<boolean> => {
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
     const currentProjectId = projectIdRef.current;
@@ -71,7 +72,7 @@ export function useAutosave({
 
     // Skip if nothing changed since last save
     if (serialized === lastSavedRef.current) {
-      return;
+      return true;
     }
 
     setStatus("saving");
@@ -96,10 +97,37 @@ export function useAutosave({
           setStatus("idle");
         }
       }, 3000);
+
+      return true;
     } catch {
-      setStatus("error");
+      return false;
     }
   }, [setStatus]);
+
+  /**
+   * Save with up to 3 retries and exponential backoff.
+   * Handles transient failures (DB cold start, network glitch).
+   */
+  const save = useCallback(async () => {
+    const maxAttempts = 3;
+    const baseDelayMs = 1000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const ok = await attemptSave();
+      if (ok) return;
+
+      // Last attempt failed — set error status
+      if (attempt === maxAttempts) {
+        setStatus("error");
+        return;
+      }
+
+      // Wait with exponential backoff before retrying
+      await new Promise((resolve) =>
+        setTimeout(resolve, baseDelayMs * Math.pow(2, attempt - 1)),
+      );
+    }
+  }, [attemptSave, setStatus]);
 
   /** Manual save — clears pending debounce and saves immediately */
   const manualSave = useCallback(() => {
@@ -109,6 +137,13 @@ export function useAutosave({
     }
     save();
   }, [save]);
+
+  // Warm up the database connection on mount (cold-start prevention)
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/canvas`).catch(() => {
+      // Best-effort wake-up — failures are handled by retry logic
+    });
+  }, [projectId]);
 
   // Debounce saves on nodes/edges changes
   useEffect(() => {

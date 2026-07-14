@@ -120,3 +120,101 @@
 .react-flow__attribution {
     display: none !important;
 }
+
+/* ── Z-index scale ────────────────────────────────────────────────────
+ * Documented layer order. Use these variables, not raw numbers.
+ *
+ *   --z-canvas      0     React Flow canvas
+ *   --z-panel      50     Floating toolbars (shape panel, canvas controls)
+ *   --z-sidebar    60     Slide-out sidebars, navbar overlay
+ *   --z-overlay    70     Collaborator avatars, save indicator
+ *   --z-dropdown   80     Dropdown menus, pickers
+ *   --z-modal     100     Dialog backdrops
+ *   --z-dialog    110     Dialog cards
+ *   --z-cursor   9999     Agent cursor, drag preview
+ */
+:root {
+    --z-canvas: 0;
+    --z-panel: 50;
+    --z-sidebar: 60;
+    --z-overlay: 70;
+    --z-dropdown: 80;
+    --z-modal: 100;
+    --z-dialog: 110;
+    --z-cursor: 9999;
+}
+
+/* ── Agent cursor wobble animation ──────────────────────────────────── */
+@keyframes agent-wobble-x {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(2px); }
+    75% { transform: translateX(-2px); }
+}
+
+@keyframes agent-wobble-y {
+    0%, 100% { transform: translateY(0); }
+    25% { transform: translateY(-1px); }
+    75% { transform: translateY(1px); }
+}
+
+.agent-cursor-wobble-x {
+    animation: agent-wobble-x 3s ease-in-out infinite;
+}
+
+.agent-cursor-wobble-y {
+    animation: agent-wobble-y 2.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-cursor-wobble-x,
+    .agent-cursor-wobble-y {
+        animation: none;
+    }
+}
+
+/* ── Spiral spinner keyframes ───────────────────────────────────────── */
+@keyframes sp-k {
+    0% { opacity: 0; }
+    4% { opacity: 1; }
+    26% { opacity: 0.08; }
+    100% { opacity: 0; }
+}
+
+.sp {
+    fill: #ffffff;
+    opacity: 0;
+    animation: sp-k 2800ms cubic-bezier(0.25, 1, 0.5, 1) infinite both;
+}
+
+.d00 { animation-delay: 2221ms; }
+.d01 { animation-delay: 2317ms; }
+.d02 { animation-delay: 869ms; }
+.d03 { animation-delay: 966ms; }
+.d04 { animation-delay: 1062ms; }
+.d10 { animation-delay: 2124ms; }
+.d11 { animation-delay: 772ms; }
+.d12 { animation-delay: 97ms; }
+.d13 { animation-delay: 193ms; }
+.d14 { animation-delay: 1159ms; }
+.d20 { animation-delay: 2028ms; }
+.d21 { animation-delay: 676ms; }
+.d22 { animation-delay: 0ms; }
+.d23 { animation-delay: 290ms; }
+.d24 { animation-delay: 1255ms; }
+.d30 { animation-delay: 1931ms; }
+.d31 { animation-delay: 579ms; }
+.d32 { animation-delay: 483ms; }
+.d33 { animation-delay: 386ms; }
+.d34 { animation-delay: 1352ms; }
+.d40 { animation-delay: 1834ms; }
+.d41 { animation-delay: 1738ms; }
+.d42 { animation-delay: 1641ms; }
+.d43 { animation-delay: 1545ms; }
+.d44 { animation-delay: 1448ms; }
+
+@media (prefers-reduced-motion: reduce) {
+    .sp {
+        animation: none;
+        opacity: 0.45;
+    }
+}

@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 async function requireProjectAccess(projectId: string, userId: string) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { ownerId: true, canvasJson: true },
+    select: { id: true, ownerId: true, canvasJson: true },
   });
 
   if (!project) return null;

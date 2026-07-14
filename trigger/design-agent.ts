@@ -42,24 +42,37 @@ const COLOR_MAP: Record<string, { bg: string; text: string }> = {
   teal: { bg: "#062822", text: "#0AC7B4" },
 };
 
-// ── Valid Logo Set ──────────────────────────────────────────────────
+// ── Valid Logo Set & ID-to-Name Resolution ─────────────────────────
 // Pre-built from LOGO_CATEGORIES so we can strip invalid logos
-// returned by the LLM before they reach the canvas.
-const VALID_LOGOS = new Set<string>();
+// returned by the LLM before they reach the canvas, and resolve
+// logo IDs (e.g. "google-cloud") to their tech-stack-icons name ("gcloud").
+// We accept both `icon.id` ("google-cloud") and `icon.icon` ("gcloud").
+const VALID_LOGO_IDS = new Set<string>();
+const VALID_ICON_NAMES = new Set<string>();
+const LOGO_ID_TO_ICON: Record<string, string> = {};
 for (const cat of LOGO_CATEGORIES) {
   for (const icon of cat.icons) {
-    VALID_LOGOS.add(icon.id);
+    VALID_LOGO_IDS.add(icon.id);
+    if (icon.icon) {
+      VALID_ICON_NAMES.add(icon.icon);
+      LOGO_ID_TO_ICON[icon.id] = icon.icon;
+    }
   }
 }
 function stripInvalidLogos(arch: Architecture): Architecture {
   return {
     ...arch,
     nodes: arch.nodes.map((n) => {
-      if (n.logo && !VALID_LOGOS.has(n.logo)) {
-        console.warn(`[Design Agent] Stripping invalid logo "${n.logo}" from node "${n.label}"`);
-        return { ...n, logo: null };
+      if (!n.logo) return n;
+      // If logo is already a valid tech-stack-icons name, keep it
+      if (VALID_ICON_NAMES.has(n.logo)) return n;
+      // If logo matches an id, resolve it to the actual icon name
+      if (LOGO_ID_TO_ICON[n.logo]) {
+        return { ...n, logo: LOGO_ID_TO_ICON[n.logo] };
       }
-      return n;
+      // Otherwise strip it
+      console.warn(`[Design Agent] Stripping invalid logo "${n.logo}" from node "${n.label}"`);
+      return { ...n, logo: null };
     }),
   };
 }

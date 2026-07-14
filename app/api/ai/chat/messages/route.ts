@@ -50,7 +50,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { projectId, role, content, parts } = body;
+  const { id, projectId, role, content, parts } = body;
 
   if (!projectId || !role || !content) {
     return NextResponse.json(
@@ -68,6 +68,7 @@ export async function POST(request: Request) {
 
   const message = await prisma.chatMessage.create({
     data: {
+      id: id || undefined,
       projectId,
       userId,
       role,
@@ -77,6 +78,52 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ message }, { status: 201 });
+}
+
+/**
+ * PATCH — Update an existing chat message (e.g. tool output status/runId).
+ * Body: { projectId, messageId, parts }
+ */
+export async function PATCH(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { projectId, messageId, parts } = body;
+
+  if (!projectId || !messageId || !parts) {
+    return NextResponse.json(
+      { error: "projectId, messageId, and parts are required" },
+      { status: 400 },
+    );
+  }
+
+  const existingMessage = await prisma.chatMessage.findUnique({
+    where: { id: messageId },
+  });
+
+  if (!existingMessage) {
+    return NextResponse.json({ error: "Message not found" }, { status: 404 });
+  }
+
+  // Ensure message belongs to the current user and project
+  if (
+    existingMessage.userId !== userId ||
+    existingMessage.projectId !== projectId
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const updatedMessage = await prisma.chatMessage.update({
+    where: { id: messageId },
+    data: {
+      parts: parts,
+    },
+  });
+
+  return NextResponse.json({ message: updatedMessage });
 }
 
 /**

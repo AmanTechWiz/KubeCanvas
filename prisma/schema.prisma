@@ -64,3 +64,14 @@ model ChatMessage {
 
   @@index([projectId, userId, createdAt])
 }
+
+model SpecExport {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  files     Json
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@index([userId, createdAt])
+}
