@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { tasks } from "@trigger.dev/sdk";
 import { prisma } from "@/lib/prisma";
+import { checkProjectAccess } from "@/lib/project-access";
 import type { designAgent } from "@/trigger/design-agent";
 
 /**
@@ -33,19 +34,19 @@ export async function POST(request: Request) {
     );
   }
 
-  // Verify project access
+  // Verify project access (owner or collaborator)
+  const access = await checkProjectAccess(projectId);
+  if (!access) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, ownerId: true, canvasJson: true },
+    select: { id: true, canvasJson: true },
   });
 
   if (!project) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  // Owner or collaborator can trigger design
-  if (project.ownerId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Read current canvas state for diff-based modification
@@ -89,7 +90,11 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json(
-    { runId: taskRun.runId, triggerDevRunId: handle.id },
+    {
+      runId: taskRun.runId,
+      triggerDevRunId: handle.id,
+      previousCanvasJson: canvasJson ?? { nodes: [], edges: [] },
+    },
     { status: 201 },
   );
 }

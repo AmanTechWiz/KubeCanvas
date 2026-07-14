@@ -80,7 +80,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Recently Added
 
-- feature [45] — Liquid glass visual overhaul: toned down optics across all panels (frost 4→1.5, brightness 0.18→0.06, strength 0.15→0.06); navbar uses dark tint `rgba(10,10,13,0.7)` with properly aligned buttons (h-8, gap-0.5, px-2) and centered title via flex instead of absolute positioning; AI toggle reverted to solid button with border (no Glass wrapper); chat panel glass only on outer shell, all message bubbles and input are solid opaque surfaces with `bg-white/[0.04]`/`[0.06]` + `border-white/[0.06]`; shape panel compact (h-8 buttons, gap-0.5, py-1); canvas controls tighter (py-0.5, gap-0.5); color toolbar smaller (h-4 swatches, py-1); dialogs use solid `bg-[#111114]` cards with border instead of Glass; logo picker and project sidebar use dark `rgba(10,10,13,0.85-0.9)` tints; all inner elements (buttons, inputs, chips) use consistent `bg-white/[0.04-0.06]` + `border-white/[0.06]` with `hover:bg-white/[0.08-0.1]`; build passes 0 errors.
+- bugfix — Spec export zip download HTTP 500: `archiver` package uses Node.js native streams and `zlib` which Turbopack can't bundle, causing a runtime crash on the `/api/ai/export-spec/[exportId]` download route. Fixed by adding `archiver` to `serverExternalPackages` in `next.config.ts` so Next.js uses the node_modules version at runtime instead of trying to bundle it. Build passes 0 errors.
 
 ## Recently Completed
 

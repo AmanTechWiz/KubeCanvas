@@ -195,6 +195,7 @@ export function WorkspaceShell({
               pendingTemplate={pendingTemplate}
               onTemplateImported={() => setPendingTemplate(null)}
               currentUserId={currentUserId}
+              isOwner={isOwner}
               onSaveApi={setSaveApi}
               aiSidebarOpen={aiSidebarOpen}
             />

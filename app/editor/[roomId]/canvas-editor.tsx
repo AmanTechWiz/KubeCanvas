@@ -103,6 +103,7 @@ function FlowCanvas({
   pendingTemplate,
   onTemplateImported,
   currentUserId,
+  isOwner,
   onSaveApi,
   aiSidebarOpen,
 }: {
@@ -110,6 +111,7 @@ function FlowCanvas({
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
   currentUserId: string
+  isOwner: boolean
   onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
   aiSidebarOpen?: boolean
 }) {
@@ -773,7 +775,7 @@ function FlowCanvas({
     <ShapePanelContext.Provider
       value={{
         addNode: handleAddNode,
-        onClear: () => clearNodesMutation(),
+        onClear: isOwner ? () => clearNodesMutation() : undefined,
         onOpenLogoPicker: () => setLogoPickerOpen((v) => !v),
         logoPickerOpen,
       }}
@@ -1210,6 +1212,7 @@ export interface CanvasEditorProps {
   pendingTemplate?: CanvasTemplate | null
   onTemplateImported?: () => void
   currentUserId: string
+  isOwner: boolean
   onSaveApi?: (api: { manualSave: () => void; status: SaveStatus }) => void
   aiSidebarOpen?: boolean
 }
@@ -1220,6 +1223,7 @@ export function CanvasEditor({
   pendingTemplate,
   onTemplateImported,
   currentUserId,
+  isOwner,
   onSaveApi,
   aiSidebarOpen,
 }: CanvasEditorProps) {
@@ -1246,6 +1250,7 @@ export function CanvasEditor({
               pendingTemplate={pendingTemplate}
               onTemplateImported={onTemplateImported}
               currentUserId={currentUserId}
+              isOwner={isOwner}
               onSaveApi={onSaveApi}
               aiSidebarOpen={aiSidebarOpen}
             />

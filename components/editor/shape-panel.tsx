@@ -158,9 +158,12 @@ export function ShapePanel() {
             label={s.label}
           />
         ))}
-        {/* Divider */}
-        <div className="mx-1 h-5 w-px bg-white/[0.12]" />
-        {onClear && <ClearConfirmButton onConfirm={onClear} />}
+        {onClear && (
+          <>
+            <div className="mx-1 h-5 w-px bg-white/[0.12]" />
+            <ClearConfirmButton onConfirm={onClear} />
+          </>
+        )}
       </div>
     </div>
   );

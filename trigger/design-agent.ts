@@ -238,22 +238,30 @@ export const designAgent = task({
     const isModification = !!currentArchitecture && (currentArchitecture.nodes.length > 0 || currentArchitecture.edges.length > 0);
 
     // ── Detect clear canvas intent ──────────────────────────────────
-    const clearIntent = /\b(clear|reset|empty|wipe|remove all|delete all|clean)\b/i.test(prompt) &&
-      /\b(canvas|board|diagram|architecture|all|everything)\b/i.test(prompt);
+    // The agent must NOT clear the canvas itself. Instead, it tells the
+    // user to use the Clear All button in the toolbar. The only exception
+    // is when the user explicitly asks to build an entirely new architecture
+    // (handled by the normal generate flow below).
+    const clearIntent =
+      /\b(clear|wipe|clean)\s+(the\s+)?(canvas|board|diagram|all|everything)\b/i.test(prompt) ||
+      /\b(reset|empty)\s+(the\s+)?(canvas|board|diagram)\b/i.test(prompt) ||
+      /\b(remove|delete)\s+all\b/i.test(prompt) ||
+      /\b(clear|wipe|clean)\s+all\b/i.test(prompt);
 
     if (clearIntent) {
-      console.log(`[Design Agent] Clear canvas intent detected — clearing room ${roomId}`);
+      console.log(`[Design Agent] Clear canvas intent detected — redirecting to Clear All button`);
       await liveblocks.mutateStorage(roomId, async ({ root }) => {
         root.set("agentThinking", false);
         root.set("agentCursor", null);
       });
-      await mutateFlow({ client: liveblocks, roomId }, (flow) => {
-        for (const n of flow.nodes) flow.removeNode(n.id);
-        for (const e of flow.edges) flow.removeEdge(e.id);
-      });
-      console.log(`[Design Agent] Canvas cleared`);
       metadata.set("phase", "complete");
-      return { status: "completed", nodesCount: 0, edgesCount: 0, mode: "clear" };
+      return {
+        status: "completed",
+        nodesCount: currentArchitecture?.nodes.length ?? 0,
+        edgesCount: currentArchitecture?.edges.length ?? 0,
+        mode: "text",
+        textResponse: "To clear the canvas, use the **Clear All** button (🗑️) in the shape panel at the bottom of the editor. It will ask for confirmation before removing everything.",
+      };
     }
 
     console.log(`[Design Agent] Starting for room ${roomId} (${isModification ? "modification" : "fresh"})`);
@@ -338,6 +346,10 @@ export const designAgent = task({
     //
     // Each node and edge is added individually so the agent cursor
     // smoothly glides across the canvas and users can follow along.
+    //
+    // The entire animation block is wrapped in try/finally so that if
+    // the run is cancelled (wait.for throws), we always clear the
+    // agent cursor + thinking state — preventing a floating cursor.
 
     const ANIM_DELAY = 0.25; // seconds between steps
 
@@ -347,7 +359,15 @@ export const designAgent = task({
       });
     }
 
-    if (isModification) {
+    async function clearAgentState() {
+      await liveblocks.mutateStorage(roomId, async ({ root }) => {
+        root.set("agentThinking", false);
+        root.set("agentCursor", null);
+      });
+    }
+
+    try {
+      if (isModification) {
       // Diff-based: only apply changes
       const diff = computeDiff(currentArchitecture!, architecture);
       logDiff(diff);
@@ -531,15 +551,14 @@ export const designAgent = task({
         });
       }
     }
+    } finally {
+      // Always clear cursor + thinking state — even on cancellation
+      await clearAgentState();
+    }
 
     console.log(`[Design Agent] Canvas updated successfully`);
 
-    // ── Clear agent state ──────────────────────────────────────────
     metadata.set("phase", "complete");
-    await liveblocks.mutateStorage(roomId, async ({ root }) => {
-      root.set("agentThinking", false);
-      root.set("agentCursor", null);
-    });
 
     return {
       status: "completed",

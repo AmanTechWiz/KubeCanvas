@@ -161,7 +161,7 @@ Use this structure:
 [What must exist before this phase can start]
 
 ### Deliverables
-- [Specific file/component/route to create]
+- [Specific file/component/route to create] (Don't create random migration or file names , just mention the filetype with respective tech stack to generate)
 - [Another deliverable]
 
 ### Definition of Done
@@ -206,8 +206,7 @@ Use this structure:
 
 # Implementation Questions
 
-> **Instructions for the coding agent:** Read this file first. Ask EVERY question below to the developer interactively. Do NOT skip any question. Do NOT begin implementation until all "Required" questions are answered. "Recommended" questions can be skipped with the developer's explicit acknowledgment.
-
+> **Instructions for the coding agent:** Read this file first. Ask EVERY question immediately as soon as you come to this file to the developer interactively. Do NOT skip any question. Do NOT begin implementation until all "Required" questions are answered. Also do ask language choice by the user to build this project (frontend/backend only) Once "Required" questions are answered by the user ask whether the user wants to answer "Recommended" questions. After all questions are answered start making a 'plan.md' after asking the user if the user is ready to make the plan.After all interaction with user , end with making plan.md file.
 ---
 
 ## Authentication & Authorization

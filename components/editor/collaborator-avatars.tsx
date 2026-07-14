@@ -16,9 +16,12 @@ export function CollaboratorAvatars() {
   const others = useOthers()
   const self = useSelf()
 
-  const othersList = self
+  const othersList = (self
     ? others.filter((o) => o.id !== self.id)
     : others
+  // Deduplicate: useOthers returns one entry per *connection*, so
+  // the same user with multiple tabs produces duplicate entries.
+  ).filter((o, i, arr) => arr.findIndex((x) => x.id === o.id) === i)
 
   const visible = othersList.slice(0, MAX_VISIBLE)
   const overflow = othersList.length - MAX_VISIBLE

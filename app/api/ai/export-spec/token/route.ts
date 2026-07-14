@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { auth as triggerAuth } from "@trigger.dev/sdk";
 import { prisma } from "@/lib/prisma";
+import { checkProjectAccess } from "@/lib/project-access";
 
 /**
  * POST — Issue a Trigger.dev public token scoped to a specific spec export run.
@@ -10,11 +10,6 @@ import { prisma } from "@/lib/prisma";
  * Verifies ownership via TaskRun, then returns a time-limited public token.
  */
 export async function POST(request: Request) {
-  const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const body = await request.json();
   const { runId } = body;
 
@@ -35,7 +30,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (taskRun.userId !== userId) {
+  // Allow owner or collaborator with project access
+  const access = await checkProjectAccess(taskRun.projectId);
+  if (!access) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

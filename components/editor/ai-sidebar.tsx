@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from "react"
 import ReactDOM from "react-dom"
-import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package } from "lucide-react"
+import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package, FolderOpen, Check, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SpiralSpinner } from "@/components/ui/spiral-spinner"
@@ -11,6 +11,13 @@ import { DefaultChatTransport } from "ai"
 import { useRealtimeRun } from "@trigger.dev/react-hooks"
 import { renderFormattedText } from "@/lib/format-chat"
 import { Z } from "@/lib/z-index"
+import {
+  isFileSystemAccessSupported,
+  writeProjectToDirectory,
+  downloadAsZip,
+  type GeneratedFile,
+  type ExportProgress,
+} from "@/lib/fs-export"
 
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -27,9 +34,15 @@ interface AiSidebarProps {
 function ArchitectStatusCard({
   runId,
   onComplete,
+  onCancel,
+  onRevert,
+  previousCanvasJson,
 }: {
   runId: string
   onComplete?: (run: any) => void
+  onCancel?: () => void
+  onRevert?: (previousCanvasJson: any) => void
+  previousCanvasJson?: any
 }) {
   const [accessToken, setAccessToken] = useState<string | undefined>(undefined)
   const [cancelling, setCancelling] = useState(false)
@@ -69,7 +82,25 @@ function ArchitectStatusCard({
   const status = run?.status
 
   const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
-  const isRunning = !isDone && status !== undefined
+  // Show spinner + cancel immediately — the card only renders after the
+  // run has been triggered, so "in-progress" is the correct default
+  // even before the realtime subscription resolves status.
+  const isRunning = !isDone
+
+  // Safety net: when Trigger.dev confirms cancellation, re-clear the cursor.
+  // Handles race where agent sets cursor AFTER our initial cancel but before
+  // cancellation fully propagates.
+  useEffect(() => {
+    if (status !== "CANCELED") return
+    const timer = setTimeout(() => {
+      fetch("/api/ai/design/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ triggerDevRunId: runId }),
+      }).catch(() => {})
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [status, runId])
 
   const label = status === "COMPLETED"
     ? "Architecture complete!"
@@ -81,6 +112,9 @@ function ArchitectStatusCard({
 
   const handleCancel = useCallback(async () => {
     setCancelling(true)
+    // Mark as cancelled in local state immediately
+    onCancel?.()
+
     try {
       await fetch("/api/ai/design/cancel", {
         method: "POST",
@@ -90,33 +124,51 @@ function ArchitectStatusCard({
     } catch {
       // Ignore errors — cancel is best-effort
     }
-  }, [runId])
+
+    // Wait for cancellation to propagate through Trigger.dev before
+    // reverting — otherwise the agent might still be mid-animation
+    // and re-add nodes on top of the restored canvas.
+    if (previousCanvasJson) {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      onRevert?.(previousCanvasJson)
+    }
+  }, [runId, onCancel, onRevert, previousCanvasJson])
 
   return (
-    <div className="mx-0 mb-1 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2">
-            {!isDone ? (
-              <SpiralSpinner className="size-4 shrink-0" />
-            ) : status === "COMPLETED" ? (
-              <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-success)]" />
-            ) : status === "CANCELED" ? (
-              <span className="inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground" />
-            ) : (
-              <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-error)]" />
-            )}
-            <span className="text-xs font-medium text-muted-foreground flex-1">
-              {label}
-            </span>
-            {isRunning && !cancelling && (
-              <button
-                onClick={handleCancel}
-                className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Cancel
-              </button>
-            )}
-            {cancelling && (
-              <span className="text-[10px] text-muted-foreground">Cancelling...</span>
-            )}
+    <div className="mx-0 mb-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3.5 py-2.5">
+      <div className="flex items-center gap-2.5">
+        {!isDone ? (
+          <SpiralSpinner className="size-3.5 shrink-0" />
+        ) : status === "COMPLETED" ? (
+          <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-success)]" />
+        ) : status === "CANCELED" ? (
+          <span className="inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+        ) : (
+          <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-error)]" />
+        )}
+        <span className="text-[12px] font-normal text-muted-foreground flex-1">
+          {label}
+        </span>
+        {isRunning && !cancelling && (
+          <button
+            onClick={handleCancel}
+            className="cursor-pointer rounded-full border border-white/[0.12] bg-transparent px-3 py-0.5 text-[11px] font-normal text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cancel
+          </button>
+        )}
+        {cancelling && (
+          <span className="text-[11px] text-muted-foreground/60">Cancelling...</span>
+        )}
+        {status === "COMPLETED" && previousCanvasJson && !cancelling && (
+          <button
+            onClick={() => onRevert?.(previousCanvasJson)}
+            className="cursor-pointer rounded-full border border-white/[0.12] bg-transparent px-3 py-0.5 text-[11px] font-normal text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Revert
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -142,25 +194,25 @@ function ArchitectureConfirmCard({
   }, [prompt, messageId, onApply])
 
   return (
-    <div className="mx-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-      <p className="text-xs font-medium text-amber-400/90 mb-2">
-        ⚠ Architecture changes cannot be undone
+    <div className="mx-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3">
+      <p className="text-[12px] font-normal text-amber-400/90 mb-2">
+        Architecture changes cannot be undone
       </p>
-      <p className="text-[11px] leading-relaxed text-muted-foreground mb-3 line-clamp-3">
+      <p className="text-[11px] leading-relaxed text-muted-foreground/70 mb-3 line-clamp-3">
         {prompt}
       </p>
       <div className="flex gap-2">
         <button
           onClick={handleApply}
           disabled={applying}
-          className="cursor-pointer rounded-lg bg-amber-500/20 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+          className="cursor-pointer rounded-full bg-amber-500/20 px-4 py-1.5 text-[12px] font-normal text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
         >
           {applying ? "Starting..." : "Apply changes"}
         </button>
         <button
           onClick={() => onDismiss(messageId)}
           disabled={applying}
-          className="cursor-pointer rounded-lg border border-white/[0.08] px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+          className="cursor-pointer rounded-full border border-white/[0.12] bg-transparent px-4 py-1.5 text-[12px] font-normal text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
         >
           Skip
         </button>
@@ -363,6 +415,7 @@ function ChatTab({
                       ...p.output,
                       runId: data.runId,
                       confirmed: true,
+                      previousCanvasJson: data.previousCanvasJson,
                     },
                   }
                 }
@@ -403,6 +456,70 @@ function ChatTab({
       }
     },
     [projectId, currentUserId, setMessages],
+  )
+
+  const handleArchitectCancel = useCallback(
+    (messageId: string) => {
+      setMessages((prevMessages) => {
+        const updated = prevMessages.map((m) => {
+          if (m.id !== messageId) return m
+          return {
+            ...m,
+            parts: m.parts?.map((p: any) => {
+              if (p.type === "tool-generateArchitecture") {
+                return {
+                  ...p,
+                  output: {
+                    ...p.output,
+                    cancelled: true,
+                  },
+                }
+              }
+              return p
+            }),
+          }
+        })
+        try {
+          localStorage.setItem(
+            `chat-${projectId}-${currentUserId}`,
+            JSON.stringify(updated),
+          )
+        } catch {}
+
+        const updatedMsg = updated.find((m) => m.id === messageId)
+        if (updatedMsg?.parts) {
+          fetch("/api/ai/chat/messages", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId,
+              messageId,
+              parts: updatedMsg.parts,
+            }),
+          }).catch(() => {})
+        }
+
+        return updated
+      })
+
+      setArchRuns((prev) => {
+        const next = new Map(prev)
+        next.delete(messageId)
+        return next
+      })
+    },
+    [projectId, currentUserId, setMessages],
+  )
+
+  const handleArchitectRevert = useCallback(
+    (previousCanvasJson: any) => {
+      fetch("/api/ai/design/revert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, previousCanvasJson }),
+      }).catch(() => {})
+    },
+    [projectId],
   )
 
   const handleArchitectComplete = useCallback(
@@ -471,21 +588,29 @@ function ChatTab({
   return (
     <div className="flex h-full flex-col">
       {/* Chat messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-3 space-y-3"
+        style={{
+          maskImage: "linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)",
+          WebkitMaskImage: "linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)",
+        }}
+      >
         {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.04] border border-white/[0.06]">
-              <Bot className="size-6 text-[var(--accent-primary)]" />
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center px-6">
+            <div className="flex size-14 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.08]">
+              <Bot className="size-7 text-[var(--accent-primary)]/80" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">
+              <p className="text-base font-normal tracking-[-0.02em] text-foreground">
                 Ask KubeAI anything
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Architecture advice, design reviews, or generate on canvas
+              <p className="mt-2 text-[13px] text-muted-foreground/70 leading-relaxed">
+                Architecture advice, design reviews,
+                <br />or generate on canvas
               </p>
             </div>
-            <div className="flex flex-wrap justify-center gap-2 mt-2">
+            <div className="flex flex-col w-full gap-2 mt-2">
               {[
                 "Design a microservices architecture",
                 "What database should I use?",
@@ -497,7 +622,7 @@ function ChatTab({
                     setInput(chip)
                     setTimeout(() => handleSend(), 50)
                   }}
-                  className="cursor-pointer rounded-full bg-white/[0.04] border border-white/[0.06] px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
+                  className="cursor-pointer rounded-full bg-white/[0.03] border border-white/[0.08] px-4 py-2 text-[12px] font-normal text-muted-foreground/70 text-left transition-colors hover:bg-white/[0.06] hover:text-foreground"
                 >
                   {chip}
                 </button>
@@ -510,7 +635,7 @@ function ChatTab({
           <div key={message.id}>
             {(message as any).role === "user" ? (
               <div className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-[var(--accent-primary)]/15 border border-[var(--accent-primary)]/10 px-3 py-2 text-sm text-foreground">
+                <div className="max-w-[85%] rounded-xl rounded-br-md bg-[var(--accent-primary)]/15 border border-[var(--accent-primary)]/10 px-4 py-2.5 text-[13px] leading-relaxed text-foreground">
                   {renderFormattedText(
                     (message as any).parts
                       ?.filter((p: any) => p.type === "text")
@@ -531,7 +656,7 @@ function ChatTab({
                   )
                   return rawMsg.parts?.map((part: any, i: number) => {
                     if (part.type === "text") {
-                      if (hasArchTool) {
+                      if (hasArchTool || hasActiveToolCall) {
                         const toolPart = rawMsg.parts?.find(
                           (p: any) => p.type === "tool-generateArchitecture"
                         )
@@ -540,7 +665,7 @@ function ChatTab({
                       }
                       return (
                         <div key={i} className="max-w-[85%]">
-                          <div className="rounded-2xl rounded-bl-md bg-white/[0.06] border border-white/[0.06] px-3 py-2 text-sm text-foreground">
+                          <div className="rounded-xl rounded-bl-md bg-white/[0.06] border border-white/[0.08] px-4 py-2.5 text-[13px] leading-relaxed text-foreground">
                             {renderFormattedText(part.text)}
                           </div>
                         </div>
@@ -553,7 +678,7 @@ function ChatTab({
                           return (
                             <div
                               key={i}
-                              className="mx-0 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2"
+                              className="mx-0 flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2"
                             >
                               <SpiralSpinner className="size-3.5 shrink-0" />
                               <span className="text-xs text-muted-foreground">Preparing architecture...</span>
@@ -565,8 +690,8 @@ function ChatTab({
                             const isDismissed = part.output.dismissed || dismissedRef.current.has(message.id)
                             if (isDismissed) return null
 
-                            // Already completed — card was dismissed, only the text stays
-                            if (part.output.isCompleted) return null
+                            // Cancelled — card was dismissed via cancel
+                            if (part.output.cancelled) return null
 
                             const runId = part.output.runId || archRuns.get(message.id)
                             const isConfirmed = part.output.confirmed || archRuns.has(message.id)
@@ -579,6 +704,13 @@ function ChatTab({
                                     onComplete={(run) =>
                                       handleArchitectComplete(message.id, run)
                                     }
+                                    onCancel={() =>
+                                      handleArchitectCancel(message.id)
+                                    }
+                                    onRevert={(prev) =>
+                                      handleArchitectRevert(prev)
+                                    }
+                                    previousCanvasJson={part.output?.previousCanvasJson}
                                   />
                                 </div>
                               )
@@ -667,9 +799,9 @@ function ChatTab({
 
         {/* Loading indicator — hidden when a tool call is active to avoid duplicate spinners */}
         {status === "streaming" && !hasActiveToolCall && (
-          <div className="flex items-center gap-2 px-1">
+          <div className="flex items-center gap-2.5 px-1 py-1">
             <SpiralSpinner className="size-4" />
-            <span className="text-xs text-muted-foreground">Thinking...</span>
+            <span className="text-[12px] text-muted-foreground/70">Thinking...</span>
           </div>
         )}
       </div>
@@ -681,16 +813,16 @@ function ChatTab({
             e.preventDefault()
             handleSend()
           }}
-          className="flex items-end gap-2"
+          className="flex items-center gap-2"
         >
-          <div className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.06] px-3 py-2 focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/30">
+          <div className="flex-1 rounded-lg bg-white/[0.04] border border-white/[0.08] px-4 py-2.5 focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/30">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask about your architecture..."
               rows={1}
-              className="w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+              className="w-full resize-none bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
               style={{ minHeight: "20px", maxHeight: "120px" }}
               onInput={(e) => {
                 const target = e.target as HTMLTextAreaElement
@@ -704,7 +836,7 @@ function ChatTab({
             size="icon-sm"
             variant="ghost"
             disabled={!input.trim() || status === "streaming"}
-            className="cursor-pointer shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] text-muted-foreground hover:text-[var(--accent-primary)] hover:bg-white/[0.1] disabled:opacity-30"
+            className="cursor-pointer shrink-0 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground hover:text-[var(--accent-primary)] hover:bg-white/[0.1] disabled:opacity-30"
           >
             {status === "streaming" ? (
               <Loader2 className="size-4 animate-spin" />
@@ -718,7 +850,7 @@ function ChatTab({
               size="icon-sm"
               variant="ghost"
               onClick={stop}
-              className="cursor-pointer shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] text-muted-foreground hover:text-[var(--state-error)] hover:bg-white/[0.1]"
+              className="cursor-pointer shrink-0 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground hover:text-[var(--state-error)] hover:bg-white/[0.1]"
             >
               <StopCircle className="size-4" />
             </Button>
@@ -810,30 +942,32 @@ function SpecExportStatusCard({
   }, [runId])
 
   return (
-    <div className="mx-0 mb-1 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
-      {!isDone ? (
-        <SpiralSpinner className="size-4 shrink-0" />
-      ) : status === "COMPLETED" ? (
-        <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-success)]" />
-      ) : status === "CANCELED" ? (
-        <span className="inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground" />
-      ) : (
-        <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-error)]" />
-      )}
-      <span className="text-xs font-medium text-muted-foreground flex-1">
-        {phaseLabel}
-      </span>
-      {isRunning && !cancelling && (
-        <button
-          onClick={handleCancel}
-          className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Cancel
-        </button>
-      )}
-      {cancelling && (
-        <span className="text-[10px] text-muted-foreground">Cancelling...</span>
-      )}
+    <div className="mx-0 mb-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3.5 py-2.5">
+      <div className="flex items-center gap-2.5">
+        {!isDone ? (
+          <SpiralSpinner className="size-3.5 shrink-0" />
+        ) : status === "COMPLETED" ? (
+          <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-success)]" />
+        ) : status === "CANCELED" ? (
+          <span className="inline-block size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+        ) : (
+          <span className="inline-block size-1.5 shrink-0 rounded-full bg-[var(--state-error)]" />
+        )}
+        <span className="text-[12px] font-normal text-muted-foreground flex-1">
+          {phaseLabel}
+        </span>
+        {isRunning && !cancelling && (
+          <button
+            onClick={handleCancel}
+            className="cursor-pointer rounded-full border border-white/[0.12] bg-transparent px-3 py-0.5 text-[11px] font-normal text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cancel
+          </button>
+        )}
+        {cancelling && (
+          <span className="text-[11px] text-muted-foreground/60">Cancelling...</span>
+        )}
+      </div>
     </div>
   )
 }
@@ -845,9 +979,18 @@ function SpecsTab({ projectId }: { projectId: string }) {
   const [exportId, setExportId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Save-to-disk state
+  const [saveProgress, setSaveProgress] = useState<ExportProgress | null>(null)
+  const [savedPath, setSavedPath] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
   const handleExport = useCallback(async () => {
     setError(null)
     setExportId(null)
+    setSavedPath(null)
+    setSaveError(null)
+    setSaveProgress(null)
 
     try {
       const res = await fetch("/api/ai/export-spec", {
@@ -863,8 +1006,9 @@ function SpecsTab({ projectId }: { projectId: string }) {
 
       const data = await res.json()
       setRunId(data.runId)
-    } catch (err: any) {
-      setError(err.message || "Failed to start export")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to start export"
+      setError(msg)
     }
   }, [projectId])
 
@@ -872,40 +1016,131 @@ function SpecsTab({ projectId }: { projectId: string }) {
     setExportId(id)
   }, [])
 
-  const handleDownload = useCallback(() => {
-    if (!exportId) return
-    window.open(`/api/ai/export-spec/${exportId}`, "_blank")
+  // Fetch files from API as JSON, then write to disk or download ZIP
+  const fetchExportFiles = useCallback(async (): Promise<{ projectName: string; files: GeneratedFile[] } | null> => {
+    if (!exportId) return null
+    try {
+      const res = await fetch(`/api/ai/export-spec/${exportId}?format=json`, {
+        credentials: "same-origin",
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`)
+      }
+      const data = await res.json() as { projectName: string; files: Record<string, string> }
+      const generatedFiles: GeneratedFile[] = Object.entries(data.files).map(
+        ([name, content]) => ({ path: `.ai-spec/${name}`, content })
+      )
+      return { projectName: data.projectName, files: generatedFiles }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to fetch export data"
+      throw new Error(msg)
+    }
   }, [exportId])
+
+  const handleSaveProject = useCallback(async () => {
+    setSaving(true)
+    setSaveError(null)
+    setSavedPath(null)
+    setSaveProgress(null)
+
+    try {
+      const data = await fetchExportFiles()
+      if (!data) return
+
+      if (isFileSystemAccessSupported()) {
+        // Direct-to-disk via File System Access API
+        const result = await writeProjectToDirectory(
+          data.projectName,
+          data.files,
+          (progress) => setSaveProgress({ ...progress }),
+        )
+
+        if (!result.success && result.filesWritten === 0 && result.filesFailed.length === 0) {
+          // User cancelled the picker
+          setSaving(false)
+          setSaveProgress(null)
+          return
+        }
+
+        if (result.filesFailed.length > 0) {
+          setSaveError(`${result.filesFailed.length} file(s) failed to write: ${result.filesFailed.join(", ")}`)
+        }
+
+        setSavedPath(result.savedPath ?? data.projectName)
+      } else {
+        // Fallback: client-side ZIP download
+        setSaveProgress({ phase: "writing", current: 0, total: data.files.length })
+        await downloadAsZip(data.projectName, data.files)
+        setSaveProgress({ phase: "complete", current: data.files.length, total: data.files.length })
+        setSavedPath("downloaded")
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Save failed"
+      setSaveError(msg)
+      setSaveProgress({ phase: "error", current: 0, total: 0, error: msg })
+    } finally {
+      setSaving(false)
+    }
+  }, [fetchExportFiles])
+
+  // Legacy ZIP-only fallback download
+  const handleDownloadZip = useCallback(async () => {
+    if (!exportId) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const data = await fetchExportFiles()
+      if (!data) return
+      await downloadAsZip(data.projectName, data.files)
+      setSavedPath("downloaded")
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Download failed"
+      setSaveError(msg)
+    } finally {
+      setSaving(false)
+    }
+  }, [exportId, fetchExportFiles])
 
   const handleReset = useCallback(() => {
     setRunId(null)
     setExportId(null)
     setError(null)
+    setSaveProgress(null)
+    setSavedPath(null)
+    setSaveError(null)
+    setSaving(false)
   }, [])
 
+  const fsSupported = isFileSystemAccessSupported()
+
   return (
-    <div className="flex h-full flex-col p-3">
+    <div
+      className="flex h-full flex-col p-4"
+      style={{
+        maskImage: "linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)",
+        WebkitMaskImage: "linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)",
+      }}
+    >
       {/* Header */}
-      <div className="mb-3">
-        <div className="flex items-center gap-2 mb-1">
-          <Package className="size-4 text-[var(--accent-primary)]" />
-          <span className="text-sm font-semibold text-foreground">
-            AI Implementation Pack
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Export your architecture as a structured implementation package
-          optimized for AI coding agents.
+      <div className="mb-4 px-1 pt-0 pb-1">
+        <h2 className="text-2xl font-normal text-foreground leading-tight tracking-[-0.03em] mb-3">
+          AI Spec Export
+        </h2>
+        <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-[280px]">
+          Structured implementation package optimized for AI coding agents.
         </p>
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Initial state — file list + export button */}
         {!runId && !exportId && (
-          <>
-            {/* Files list */}
-            <div className="mb-4 space-y-1.5">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+          <div className="flex flex-col flex-1">
+            <div className="flex-1" />
+
+            <div className="space-y-2">
+              <p className="text-[10px] font-[family-name:var(--font-geist-mono)] uppercase text-muted-foreground/50 tracking-[0.14em] mb-3">
                 Generated files
               </p>
               {[
@@ -917,14 +1152,14 @@ function SpecsTab({ projectId }: { projectId: string }) {
               ].map((file) => (
                 <div
                   key={file.name}
-                  className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5"
+                  className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5"
                 >
-                  <FileText className="size-3.5 text-muted-foreground shrink-0" />
+                  <FileText className="size-4 text-muted-foreground/60 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium text-foreground truncate">
+                    <p className="text-[11px] font-normal font-[family-name:var(--font-geist-mono)] text-foreground/90 truncate">
                       {file.name}
                     </p>
-                    <p className="text-[10px] text-muted-foreground truncate">
+                    <p className="text-[10px] text-muted-foreground/50 truncate mt-0.5">
                       {file.desc}
                     </p>
                   </div>
@@ -932,69 +1167,151 @@ function SpecsTab({ projectId }: { projectId: string }) {
               ))}
             </div>
 
-            {/* Export button */}
             <Button
               onClick={handleExport}
-              className="w-full cursor-pointer rounded-xl bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-semibold text-xs"
+              className="w-full cursor-pointer rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-normal text-[13px] tracking-tight mt-6 h-10"
             >
-              <Package className="mr-1.5 size-3.5" />
               Export AI Spec
             </Button>
-          </>
+          </div>
         )}
 
-        {/* In-progress state */}
+        {/* In-progress state — generation running */}
         {runId && !exportId && (
           <div className="space-y-3">
             <SpecExportStatusCard
               runId={runId}
               onComplete={handleComplete}
             />
-            <p className="text-[10px] text-muted-foreground text-center">
-              Generating 5 files in parallel using Gemini Flash...
-            </p>
           </div>
         )}
 
         {/* Error state */}
         {error && (
-          <div className="mt-2 rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-3 py-2">
-            <p className="text-xs text-[var(--state-error)]">{error}</p>
+          <div className="mt-2 rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-4 py-3">
+            <p className="text-[12px] text-[var(--state-error)]">{error}</p>
             <button
               onClick={handleReset}
-              className="cursor-pointer mt-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              className="cursor-pointer mt-1.5 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
             >
               Try again
             </button>
           </div>
         )}
 
-        {/* Complete state */}
+        {/* Complete state — ready to save */}
         {exportId && (
           <div className="space-y-3">
-            <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-3 py-2.5">
+            {/* Success badge */}
+            <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-4 py-3">
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="inline-block size-1.5 rounded-full bg-[var(--state-success)]" />
-                <span className="text-xs font-medium text-[var(--state-success)]">
+                <span className="text-[12px] font-normal text-[var(--state-success)]">
                   Export complete
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                5 files generated and packaged for your coding agent.
+              <p className="text-[11px] text-muted-foreground/70">
+                5 files generated and ready to save.
               </p>
             </div>
 
-            <Button
-              onClick={handleDownload}
-              className="w-full cursor-pointer rounded-xl bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-semibold text-xs"
-            >
-              <Download className="mr-1.5 size-3.5" />
-              Download ZIP
-            </Button>
+            {/* Write progress */}
+            {saveProgress && saveProgress.phase === "writing" && (
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3">
+                <div className="flex items-center gap-2.5 mb-2.5">
+                  <Loader2 className="size-3.5 shrink-0 animate-spin text-[var(--accent-primary)]" />
+                  <span className="text-[12px] font-normal text-foreground/90">
+                    Writing {saveProgress.current}/{saveProgress.total} files…
+                  </span>
+                </div>
+                <div className="h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[var(--accent-primary)] transition-all duration-200"
+                    style={{ width: `${saveProgress.total > 0 ? (saveProgress.current / saveProgress.total) * 100 : 0}%` }}
+                  />
+                </div>
+                {saveProgress.currentFile && (
+                  <p className="mt-1.5 text-[10px] text-muted-foreground/60 font-[family-name:var(--font-geist-mono)] truncate">
+                    {saveProgress.currentFile}
+                  </p>
+                )}
+              </div>
+            )}
 
+            {/* Saved confirmation */}
+            {savedPath && !saveError && (
+              <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Check className="size-3.5 shrink-0 text-[var(--state-success)]" />
+                  <span className="text-[12px] font-normal text-[var(--state-success)]">
+                    {savedPath === "downloaded" ? "ZIP downloaded" : "Project saved"}
+                  </span>
+                </div>
+                {savedPath !== "downloaded" && (
+                  <p className="text-[10px] text-muted-foreground/60 font-[family-name:var(--font-geist-mono)] truncate pl-5.5">
+                    …/{savedPath}/
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Save error */}
+            {saveError && (
+              <div className="rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertCircle className="size-3.5 shrink-0 text-[var(--state-error)]" />
+                  <span className="text-[12px] font-normal text-[var(--state-error)]">
+                    Save failed
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground/60 truncate pl-5.5">
+                  {saveError}
+                </p>
+              </div>
+            )}
+
+            {/* Primary action — Save Project / Download ZIP */}
+            {!savedPath && (
+              <Button
+                onClick={handleSaveProject}
+                disabled={saving}
+                className="w-full cursor-pointer rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-normal text-[13px] tracking-tight disabled:opacity-50 h-10"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    Saving…
+                  </>
+                ) : fsSupported ? (
+                  <>
+                    <FolderOpen className="mr-1.5 size-3.5" />
+                    Save Project
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-1.5 size-3.5" />
+                    Download ZIP
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* Secondary action — ZIP fallback when FS API is primary */}
+            {!savedPath && fsSupported && (
+              <button
+                onClick={handleDownloadZip}
+                disabled={saving}
+                className="cursor-pointer w-full text-center text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-50 py-1"
+              >
+                <Download className="inline mr-1 size-3 -mt-px" />
+                Download as ZIP instead
+              </button>
+            )}
+
+            {/* Generate another */}
             <button
               onClick={handleReset}
-              className="cursor-pointer w-full text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              className="cursor-pointer w-full text-center text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors py-1"
             >
               Generate another
             </button>
@@ -1023,27 +1340,24 @@ export function AiSidebar({
 
   return (
     <div
-      className="fixed right-2 top-[56px] bottom-2 z-50 flex w-80 max-w-[calc(100vw-1rem)] flex-col rounded-2xl border border-white/[0.08] bg-white/[0.08] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_24px_rgba(0,0,0,0.3),inset_0_0.5px_0_rgba(255,255,255,0.06)]"
+      className="fixed right-2 top-[56px] bottom-2 z-50 flex w-80 max-w-[calc(100vw-1rem)] flex-col rounded-xl border border-white/[0.08] bg-white/[0.08] backdrop-blur-2xl backdrop-saturate-150"
     >
       {/* Header */}
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] px-3">
-        <div className="flex items-center gap-2">
-          <Bot className="size-4 text-[var(--accent-primary)]" />
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold leading-tight text-foreground">
-              KubeAI
-            </span>
-            <span className="text-[10px] leading-tight text-muted-foreground">
-              stuck somewhere? Try me!
-            </span>
-          </div>
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] px-4">
+        <div className="flex flex-col">
+          <span className="text-[13px] font-normal tracking-[-0.01em] leading-tight text-foreground">
+            KubeAI
+          </span>
+          <span className="text-[10px] leading-tight text-muted-foreground/50">
+            AI can make mistakes
+          </span>
         </div>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={() => setConfirmOpen(true)}
-            className="cursor-pointer rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.1] hover:text-[var(--state-error)]"
+            className="cursor-pointer rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.1] hover:text-[var(--state-error)]"
           >
             <Trash2 className="size-4" />
           </Button>
@@ -1051,7 +1365,7 @@ export function AiSidebar({
             variant="ghost"
             size="icon-sm"
             onClick={onClose}
-            className="cursor-pointer rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground"
+            className="cursor-pointer rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground"
           >
             <X className="size-4" />
           </Button>
@@ -1066,17 +1380,17 @@ export function AiSidebar({
         <div className="flex shrink-0 justify-center px-3 pt-3">
           <TabsList
             variant="default"
-            className="inline-flex w-fit rounded-full border border-white/[0.08] bg-white/[0.04] p-0.5"
+            className="inline-flex w-fit rounded-full border border-white/[0.06] bg-white/[0.03] p-0.5"
           >
             <TabsTrigger
               value="chat"
-              className="rounded-full border-0 bg-transparent px-4 py-1 text-xs font-semibold text-muted-foreground data-active:bg-white/[0.1] data-active:text-foreground"
+              className="rounded-full border-0 bg-transparent px-4 py-1.5 text-[11px] font-normal tracking-wide text-muted-foreground data-active:bg-white/[0.08] data-active:text-foreground transition-colors"
             >
               Chat
             </TabsTrigger>
             <TabsTrigger
               value="specs"
-              className="rounded-full border-0 bg-transparent px-4 py-1 text-xs font-semibold text-muted-foreground data-active:bg-white/[0.1] data-active:text-foreground"
+              className="rounded-full border-0 bg-transparent px-4 py-1.5 text-[11px] font-normal tracking-wide text-muted-foreground data-active:bg-white/[0.08] data-active:text-foreground transition-colors"
             >
               Specs
             </TabsTrigger>
@@ -1110,18 +1424,18 @@ export function AiSidebar({
             onClick={() => setConfirmOpen(false)}
           >
             <div
-              className="mx-4 w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#111114] p-5 shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
+              className="mx-4 w-full max-w-sm rounded-xl border border-white/[0.08] bg-[#111114] p-5"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 mb-4">
-                <div className="flex size-9 items-center justify-center rounded-xl bg-[var(--state-error)]/10">
+                <div className="flex size-9 items-center justify-center rounded-full bg-[var(--state-error)]/10">
                   <Trash2 className="size-4 text-[var(--state-error)]" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-foreground">
+                  <p className="text-sm font-normal tracking-[-0.01em] text-foreground">
                     Clear chat history?
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground/80">
                     All messages for this project will be deleted. This cannot be
                     undone.
                   </p>
