@@ -94,7 +94,6 @@ export function EditorLayoutClient({
             if (!open) closeDialog()
           }}
           formName={formName}
-          formSlug={formSlug}
           loading={loading}
           onNameChange={setFormName}
           onSubmit={createProject}

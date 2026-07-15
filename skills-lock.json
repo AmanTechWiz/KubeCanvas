@@ -144,6 +144,12 @@
       "sourceType": "github",
       "skillPath": "prisma-upgrade-v7/SKILL.md",
       "computedHash": "2e4d54a4c7a0fc2476e81686718a765f5eb2cacfb2fb0822f3109c76bf4a9bb0"
+    },
+    "typography": {
+      "source": "petekp/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/typography/SKILL.md",
+      "computedHash": "38193dd291004503b2d0c865574f0a75891920b240fb8014fca6f54ad8cd3d9d"
     }
   }
 }

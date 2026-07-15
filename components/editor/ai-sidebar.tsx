@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from "react"
 import ReactDOM from "react-dom"
-import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package, FolderOpen, Check, AlertCircle } from "lucide-react"
+import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package, FolderOpen, Check, AlertCircle, ArrowUpRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SpiralSpinner } from "@/components/ui/spiral-spinner"
@@ -597,36 +597,38 @@ function ChatTab({
         }}
       >
         {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-4 text-center px-6">
-            <div className="flex size-14 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.08]">
-              <Bot className="size-7 text-[var(--accent-primary)]/80" />
-            </div>
-            <div>
-              <p className="text-base font-normal tracking-[-0.02em] text-foreground">
-                Ask KubeAI anything
-              </p>
-              <p className="mt-2 text-[13px] text-muted-foreground/70 leading-relaxed">
-                Architecture advice, design reviews,
-                <br />or generate on canvas
-              </p>
-            </div>
-            <div className="flex flex-col w-full gap-2 mt-2">
-              {[
-                "Design a microservices architecture",
-                "What database should I use?",
-                "Review my current canvas",
-              ].map((chip) => (
-                <button
-                  key={chip}
-                  onClick={() => {
-                    setInput(chip)
-                    setTimeout(() => handleSend(), 50)
-                  }}
-                  className="cursor-pointer rounded-full bg-white/[0.03] border border-white/[0.08] px-4 py-2 text-[12px] font-normal text-muted-foreground/70 text-left transition-colors hover:bg-white/[0.06] hover:text-foreground"
-                >
-                  {chip}
-                </button>
-              ))}
+          <div className="flex h-full w-full items-center justify-center px-6">
+            <div className="mx-auto flex w-full max-w-[420px] flex-col items-center justify-center gap-4 text-center">
+              <div className="flex size-14 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04]">
+                <Bot className="size-7 text-[var(--accent-primary)]/80" />
+              </div>
+              <div className="w-full">
+                <p className="text-base font-normal tracking-[-0.02em] text-foreground">
+                  Ask KubeAI anything
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground/70">
+                  Architecture advice, design reviews,
+                  <br />or generate on canvas
+                </p>
+              </div>
+              <div className="mt-2 flex w-full max-w-[360px] flex-col gap-2">
+                {[
+                  "Design a microservices architecture",
+                  "What database should I use?",
+                  "Review my current canvas",
+                ].map((chip) => (
+                  <button
+                    key={chip}
+                    onClick={() => {
+                      setInput(chip)
+                      setTimeout(() => handleSend(), 50)
+                    }}
+                    className="w-full cursor-pointer rounded-[14px] border border-white/[0.12] bg-white/[0.06] px-4 py-2.5 text-left text-[12px] font-medium text-foreground/90 transition-all hover:border-white/[0.20] hover:bg-white/[0.09] hover:text-foreground hover:shadow-[0_8px_24px_rgba(0,0,0,0.22)]"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -817,6 +819,7 @@ function ChatTab({
         >
           <div className="flex-1 rounded-lg bg-white/[0.04] border border-white/[0.08] px-4 py-2.5 focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/30">
             <textarea
+              data-ai-chat-input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -1122,25 +1125,25 @@ function SpecsTab({ projectId }: { projectId: string }) {
         WebkitMaskImage: "linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)",
       }}
     >
-      {/* Header */}
-      <div className="mb-4 px-1 pt-0 pb-1">
-        <h2 className="text-2xl font-normal text-foreground leading-tight tracking-[-0.03em] mb-3">
-          AI Spec Export
-        </h2>
-        <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-[280px]">
-          Structured implementation package optimized for AI coding agents.
-        </p>
-      </div>
-
       {/* Content area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.03]">
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4">
+          <h2 className="text-lg font-semibold leading-tight tracking-tight text-balance text-foreground mb-1.5">
+            AI Spec Export
+          </h2>
+          <p className="text-sm font-normal leading-relaxed text-pretty text-foreground/40">
+            Structured implementation package ready to work with coding agents.
+          </p>
+        </div>
+
         {/* Initial state — file list + export button */}
         {!runId && !exportId && (
-          <div className="flex flex-col flex-1">
+          <div className="flex flex-1 flex-col px-5 pb-5">
             <div className="flex-1" />
 
-            <div className="space-y-2">
-              <p className="text-[10px] font-[family-name:var(--font-geist-mono)] uppercase text-muted-foreground/50 tracking-[0.14em] mb-3">
+            <div className="space-y-1.5">
+              <p className="mb-2 text-xs font-medium uppercase tracking-widest text-foreground/25">
                 Generated files
               </p>
               {[
@@ -1152,14 +1155,14 @@ function SpecsTab({ projectId }: { projectId: string }) {
               ].map((file) => (
                 <div
                   key={file.name}
-                  className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5"
+                  className="flex items-center gap-3 rounded-xl bg-white/[0.025] px-3.5 py-2.5 transition-colors hover:bg-white/[0.045]"
                 >
-                  <FileText className="size-4 text-muted-foreground/60 shrink-0" />
+                  <FileText className="size-3.5 shrink-0 text-foreground/20" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-normal font-[family-name:var(--font-geist-mono)] text-foreground/90 truncate">
+                    <p className="truncate text-xs font-normal font-[family-name:var(--font-geist-mono)] text-foreground/70">
                       {file.name}
                     </p>
-                    <p className="text-[10px] text-muted-foreground/50 truncate mt-0.5">
+                    <p className="mt-0.5 truncate text-[11px] leading-snug text-foreground/30">
                       {file.desc}
                     </p>
                   </div>
@@ -1167,32 +1170,35 @@ function SpecsTab({ projectId }: { projectId: string }) {
               ))}
             </div>
 
-            <Button
+            <button
               onClick={handleExport}
-              className="w-full cursor-pointer rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-normal text-[13px] tracking-tight mt-6 h-10"
+              className="group mt-5 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white/[0.05] text-sm font-medium tracking-tight leading-none text-foreground/65 transition-all duration-200 hover:bg-white/[0.10] hover:text-foreground"
             >
-              Export AI Spec
-            </Button>
+              <span>Export AI Spec</span>
+              <ArrowUpRight className="size-3.5 opacity-50 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-90" />
+            </button>
           </div>
         )}
 
         {/* In-progress state — generation running */}
         {runId && !exportId && (
-          <div className="space-y-3">
-            <SpecExportStatusCard
-              runId={runId}
-              onComplete={handleComplete}
-            />
+          <div className="flex-1 px-5 pb-5">
+            <div className="space-y-3">
+              <SpecExportStatusCard
+                runId={runId}
+                onComplete={handleComplete}
+              />
+            </div>
           </div>
         )}
 
         {/* Error state */}
         {error && (
-          <div className="mt-2 rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-4 py-3">
-            <p className="text-[12px] text-[var(--state-error)]">{error}</p>
+          <div className="mx-5 mb-5 rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-4 py-3">
+            <p className="text-xs text-[var(--state-error)] text-pretty">{error}</p>
             <button
               onClick={handleReset}
-              className="cursor-pointer mt-1.5 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
+              className="cursor-pointer mt-1.5 text-xs text-foreground/35 hover:text-foreground transition-colors"
             >
               Try again
             </button>
@@ -1201,16 +1207,17 @@ function SpecsTab({ projectId }: { projectId: string }) {
 
         {/* Complete state — ready to save */}
         {exportId && (
-          <div className="space-y-3">
+          <div className="flex-1 px-5 pb-5">
+            <div className="space-y-3">
             {/* Success badge */}
             <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-4 py-3">
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="inline-block size-1.5 rounded-full bg-[var(--state-success)]" />
-                <span className="text-[12px] font-normal text-[var(--state-success)]">
+                <span className="text-xs font-medium text-[var(--state-success)]">
                   Export complete
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground/70">
+              <p className="text-[11px] leading-snug text-foreground/35">
                 5 files generated and ready to save.
               </p>
             </div>
@@ -1220,7 +1227,7 @@ function SpecsTab({ projectId }: { projectId: string }) {
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3">
                 <div className="flex items-center gap-2.5 mb-2.5">
                   <Loader2 className="size-3.5 shrink-0 animate-spin text-[var(--accent-primary)]" />
-                  <span className="text-[12px] font-normal text-foreground/90">
+                  <span className="text-xs font-normal text-foreground/80">
                     Writing {saveProgress.current}/{saveProgress.total} files…
                   </span>
                 </div>
@@ -1231,7 +1238,7 @@ function SpecsTab({ projectId }: { projectId: string }) {
                   />
                 </div>
                 {saveProgress.currentFile && (
-                  <p className="mt-1.5 text-[10px] text-muted-foreground/60 font-[family-name:var(--font-geist-mono)] truncate">
+                  <p className="mt-1.5 text-[11px] text-foreground/30 font-[family-name:var(--font-geist-mono)] truncate leading-snug">
                     {saveProgress.currentFile}
                   </p>
                 )}
@@ -1243,12 +1250,12 @@ function SpecsTab({ projectId }: { projectId: string }) {
               <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Check className="size-3.5 shrink-0 text-[var(--state-success)]" />
-                  <span className="text-[12px] font-normal text-[var(--state-success)]">
+                  <span className="text-xs font-medium text-[var(--state-success)]">
                     {savedPath === "downloaded" ? "ZIP downloaded" : "Project saved"}
                   </span>
                 </div>
                 {savedPath !== "downloaded" && (
-                  <p className="text-[10px] text-muted-foreground/60 font-[family-name:var(--font-geist-mono)] truncate pl-5.5">
+                  <p className="text-[11px] text-foreground/30 font-[family-name:var(--font-geist-mono)] truncate pl-5.5 leading-snug">
                     …/{savedPath}/
                   </p>
                 )}
@@ -1260,11 +1267,11 @@ function SpecsTab({ projectId }: { projectId: string }) {
               <div className="rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertCircle className="size-3.5 shrink-0 text-[var(--state-error)]" />
-                  <span className="text-[12px] font-normal text-[var(--state-error)]">
+                  <span className="text-xs font-medium text-[var(--state-error)]">
                     Save failed
                   </span>
                 </div>
-                <p className="text-[10px] text-muted-foreground/60 truncate pl-5.5">
+                <p className="text-[11px] text-foreground/30 truncate pl-5.5 leading-snug">
                   {saveError}
                 </p>
               </div>
@@ -1272,28 +1279,28 @@ function SpecsTab({ projectId }: { projectId: string }) {
 
             {/* Primary action — Save Project / Download ZIP */}
             {!savedPath && (
-              <Button
+              <button
                 onClick={handleSaveProject}
                 disabled={saving}
-                className="w-full cursor-pointer rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary)]/90 font-normal text-[13px] tracking-tight disabled:opacity-50 h-10"
+                className="group flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.05] px-4 text-sm font-medium tracking-tight leading-none text-foreground/90 shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset] transition-all duration-300 hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-foreground hover:shadow-[0_4px_24px_-4px_rgba(255,255,255,0.08)] disabled:opacity-50"
               >
                 {saving ? (
                   <>
-                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    <Loader2 className="size-3.5 animate-spin" />
                     Saving…
                   </>
                 ) : fsSupported ? (
                   <>
-                    <FolderOpen className="mr-1.5 size-3.5" />
+                    <FolderOpen className="size-3.5" />
                     Save Project
                   </>
                 ) : (
                   <>
-                    <Download className="mr-1.5 size-3.5" />
+                    <Download className="size-3.5" />
                     Download ZIP
                   </>
                 )}
-              </Button>
+              </button>
             )}
 
             {/* Secondary action — ZIP fallback when FS API is primary */}
@@ -1301,7 +1308,7 @@ function SpecsTab({ projectId }: { projectId: string }) {
               <button
                 onClick={handleDownloadZip}
                 disabled={saving}
-                className="cursor-pointer w-full text-center text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-50 py-1"
+                className="cursor-pointer w-full text-center text-xs text-foreground/35 hover:text-foreground transition-colors disabled:opacity-50 py-1"
               >
                 <Download className="inline mr-1 size-3 -mt-px" />
                 Download as ZIP instead
@@ -1311,13 +1318,14 @@ function SpecsTab({ projectId }: { projectId: string }) {
             {/* Generate another */}
             <button
               onClick={handleReset}
-              className="cursor-pointer w-full text-center text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors py-1"
+              className="cursor-pointer w-full text-center text-xs text-foreground/35 hover:text-foreground transition-colors py-1"
             >
               Generate another
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
     </div>
   )
 }
@@ -1335,6 +1343,7 @@ export function AiSidebar({
 }: AiSidebarProps) {
   const chatRef = useRef<{ clearChat: () => void }>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<"chat" | "specs">("chat")
 
   if (!isOpen) return null
 
@@ -1374,7 +1383,8 @@ export function AiSidebar({
 
       {/* Tabbed content */}
       <Tabs
-        defaultValue="chat"
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as "chat" | "specs")}
         className="flex flex-1 flex-col overflow-hidden"
       >
         <div className="flex shrink-0 justify-center px-3 pt-3">
@@ -1384,36 +1394,44 @@ export function AiSidebar({
           >
             <TabsTrigger
               value="chat"
-              className="rounded-full border-0 bg-transparent px-4 py-1.5 text-[11px] font-normal tracking-wide text-muted-foreground data-active:bg-white/[0.08] data-active:text-foreground transition-colors"
+              className="rounded-full border-0 bg-transparent px-4 py-1.5 text-[11px] font-normal tracking-wide text-muted-foreground transition-all duration-200 data-active:bg-white/[0.08] data-active:text-foreground"
             >
               Chat
             </TabsTrigger>
             <TabsTrigger
               value="specs"
-              className="rounded-full border-0 bg-transparent px-4 py-1.5 text-[11px] font-normal tracking-wide text-muted-foreground data-active:bg-white/[0.08] data-active:text-foreground transition-colors"
+              className="rounded-full border-0 bg-transparent px-4 py-1.5 text-[11px] font-normal tracking-wide text-muted-foreground transition-all duration-200 data-active:bg-white/[0.08] data-active:text-foreground"
             >
               Specs
             </TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent
-          value="chat"
-          className="mt-0 flex-1 overflow-hidden"
-        >
-          <ChatTab
-            projectId={projectId}
-            currentUserId={currentUserId}
-            chatRef={chatRef}
-          />
-        </TabsContent>
+        <div className="relative mt-0 flex-1 overflow-hidden">
+          <div
+            className={`absolute inset-0 h-full transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[opacity,transform,filter] motion-reduce:transition-none ${
+              activeTab === "chat"
+                ? "pointer-events-auto translate-y-0 opacity-100 blur-0"
+                : "pointer-events-none translate-y-3 opacity-0 blur-[2px]"
+            }`}
+          >
+            <ChatTab
+              projectId={projectId}
+              currentUserId={currentUserId}
+              chatRef={chatRef}
+            />
+          </div>
 
-        <TabsContent
-          value="specs"
-          className="mt-0 flex-1 overflow-hidden"
-        >
-          <SpecsTab projectId={projectId} />
-        </TabsContent>
+          <div
+            className={`absolute inset-0 h-full transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[opacity,transform,filter] motion-reduce:transition-none ${
+              activeTab === "specs"
+                ? "pointer-events-auto translate-y-0 opacity-100 blur-0"
+                : "pointer-events-none translate-y-3 opacity-0 blur-[2px]"
+            }`}
+          >
+            <SpecsTab projectId={projectId} />
+          </div>
+        </div>
       </Tabs>
 
       {/* Clear chat confirmation dialog */}

@@ -218,7 +218,6 @@ export function WorkspaceShell({
             if (!open) closeDialog()
           }}
           formName={formName}
-          formSlug={formSlug}
           loading={loading}
           onNameChange={setFormName}
           onSubmit={createProject}

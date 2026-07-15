@@ -15,7 +15,6 @@ interface CreateProjectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   formName: string
-  formSlug: string
   loading: boolean
   onNameChange: (name: string) => void
   onSubmit: () => void
@@ -25,7 +24,6 @@ export function CreateProjectDialog({
   open,
   onOpenChange,
   formName,
-  formSlug,
   loading,
   onNameChange,
   onSubmit,
@@ -50,11 +48,6 @@ export function CreateProjectDialog({
               autoFocus
             />
           </div>
-          {formSlug && (
-            <p className="text-xs text-muted-foreground">
-              Slug: <span className="font-mono text-foreground/70">{formSlug}</span>
-            </p>
-          )}
         </div>
 
         <DialogFooter>
