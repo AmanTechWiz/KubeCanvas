@@ -866,6 +866,56 @@ function ChatTab({
 
 // ── Spec Export Status Card ────────────────────────────────────────
 
+// ── Polled metadata fallback hook ──────────────────────────────────
+// useRun doesn't support `enabled`, so we extract the polling into a
+// separate hook that conditionally calls useRun via SWR's null-key skip.
+function usePolledMetadata(runId: string, accessToken: string | undefined) {
+  const [phase, setPhase] = useState("")
+
+  useEffect(() => {
+    if (!accessToken || !runId) return
+    let cancelled = false
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const fetchRun = async () => {
+      try {
+        const res = await fetch(
+          `https://api.trigger.dev/api/v3/runs/${runId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        )
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        const p = String(data?.metadata?.phase ?? "")
+        if (p) setPhase(p)
+        // Stop polling once the run is done
+        if (data?.isCompleted && interval) {
+          clearInterval(interval)
+          interval = null
+        }
+      } catch {
+        // Ignore — realtime is primary
+      }
+    }
+
+    // Initial fetch after a short delay to let the task start
+    const timeout = setTimeout(fetchRun, 1500)
+    // Then poll every 2s
+    interval = setInterval(fetchRun, 2000)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+      if (interval) clearInterval(interval)
+    }
+  }, [runId, accessToken])
+
+  return { phase }
+}
+
 function SpecExportStatusCard({
   runId,
   onComplete,
@@ -897,6 +947,7 @@ function SpecExportStatusCard({
     }
   }, [runId])
 
+  // Primary: realtime subscription for status + output
   const { run } = useRealtimeRun(runId, {
     accessToken,
     enabled: !!accessToken,
@@ -910,11 +961,17 @@ function SpecExportStatusCard({
     },
   })
 
+  // Fallback: poll via REST API for metadata when realtime doesn't deliver it.
+  // useRun doesn't support `enabled`, so we gate it behind accessToken availability.
+  const polledMetadata = usePolledMetadata(runId, accessToken)
+
   const status = run?.status
   const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
   const isRunning = !isDone && status !== undefined
 
-  const phase = String((run as any)?.metadata?.phase ?? "")
+  // Prefer realtime metadata, fall back to polled metadata
+  const realtimePhase = String((run as any)?.metadata?.phase ?? "")
+  const phase = realtimePhase || polledMetadata.phase
 
   const phaseLabel =
     phase === "reading"
