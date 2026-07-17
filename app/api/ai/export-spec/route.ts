@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { projectId } = body;
+  const { projectId, description } = body;
 
   if (typeof projectId !== "string" || projectId.trim() === "") {
     return NextResponse.json(
@@ -52,10 +52,19 @@ export async function POST(request: Request) {
     );
   }
 
+  // Persist the description so it pre-fills next time
+  if (typeof description === "string") {
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { description: description.trim() || null },
+    });
+  }
+
   // Trigger the spec generation task
   const handle = await tasks.trigger<typeof generateAiSpec>("generate-ai-spec", {
     projectId,
     userId,
+    ...(typeof description === "string" && description.trim() && { projectDescription: description.trim() }),
   });
 
   // Create a TaskRun record for ownership verification on token endpoint

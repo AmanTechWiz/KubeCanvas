@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from "react"
 import ReactDOM from "react-dom"
-import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package, FolderOpen, Check, AlertCircle, ArrowUpRight } from "lucide-react"
+import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package, FolderOpen, Check, AlertCircle, ArrowUpRight, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SpiralSpinner } from "@/components/ui/spiral-spinner"
@@ -919,9 +919,11 @@ function usePolledMetadata(runId: string, accessToken: string | undefined) {
 function SpecExportStatusCard({
   runId,
   onComplete,
+  onTerminal,
 }: {
   runId: string
   onComplete?: (exportId: string) => void
+  onTerminal?: (status: string) => void
 }) {
   const [accessToken, setAccessToken] = useState<string | undefined>(undefined)
   const [cancelling, setCancelling] = useState(false)
@@ -968,6 +970,13 @@ function SpecExportStatusCard({
   const status = run?.status
   const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
   const isRunning = !isDone && status !== undefined
+
+  // Notify parent when run reaches a terminal state (cancelled / failed)
+  useEffect(() => {
+    if (isDone && status !== "COMPLETED") {
+      onTerminal?.(status!)
+    }
+  }, [isDone, status, onTerminal])
 
   // Prefer realtime metadata, fall back to polled metadata
   const realtimePhase = String((run as any)?.metadata?.phase ?? "")
@@ -1038,6 +1047,21 @@ function SpecsTab({ projectId }: { projectId: string }) {
   const [runId, setRunId] = useState<string | null>(null)
   const [exportId, setExportId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [description, setDescription] = useState("")
+
+  // Load saved description from DB on mount
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/projects/${projectId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.project?.description) {
+          setDescription(data.project.description)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [projectId])
 
   // Save-to-disk state
   const [saveProgress, setSaveProgress] = useState<ExportProgress | null>(null)
@@ -1056,7 +1080,7 @@ function SpecsTab({ projectId }: { projectId: string }) {
       const res = await fetch("/api/ai/export-spec", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId, description: description.trim() || undefined }),
       })
 
       if (!res.ok) {
@@ -1070,7 +1094,7 @@ function SpecsTab({ projectId }: { projectId: string }) {
       const msg = err instanceof Error ? err.message : "Failed to start export"
       setError(msg)
     }
-  }, [projectId])
+  }, [projectId, description])
 
   const handleComplete = useCallback((id: string) => {
     setExportId(id)
@@ -1089,7 +1113,10 @@ function SpecsTab({ projectId }: { projectId: string }) {
       }
       const data = await res.json() as { projectName: string; files: Record<string, string> }
       const generatedFiles: GeneratedFile[] = Object.entries(data.files).map(
-        ([name, content]) => ({ path: `.ai-spec/${name}`, content })
+        ([name, content]) => ({
+          path: (name === "AGENTS.md" || name === "CLAUDE.md") ? name : `.ai-spec/${name}`,
+          content,
+        })
       )
       return { projectName: data.projectName, files: generatedFiles }
     } catch (e) {
@@ -1200,7 +1227,7 @@ function SpecsTab({ projectId }: { projectId: string }) {
             <div className="flex-1" />
 
             <div className="space-y-1.5">
-              <p className="mb-2 text-xs font-medium uppercase tracking-widest text-foreground/25">
+              <p className="mb-2 text-xs font-medium uppercase tracking-widest text-foreground/60">
                 Generated files
               </p>
               {[
@@ -1227,9 +1254,23 @@ function SpecsTab({ projectId }: { projectId: string }) {
               ))}
             </div>
 
+            <div className="mt-4">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-widest text-foreground/60">
+                App description
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. Real-time collaborative design tool for teams"
+                rows={2}
+                className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-xs leading-relaxed text-foreground/70 placeholder:text-foreground/25 focus:outline-none focus:border-white/[0.15] transition-colors"
+              />
+            </div>
+
             <button
               onClick={handleExport}
-              className="group mt-5 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white/[0.05] text-sm font-medium tracking-tight leading-none text-foreground/65 transition-all duration-200 hover:bg-white/[0.10] hover:text-foreground"
+              disabled={!description.trim()}
+              className="group mt-4 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white/[0.05] text-sm font-medium tracking-tight leading-none text-foreground/65 transition-all duration-200 hover:bg-white/[0.10] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-white/[0.05] disabled:hover:text-foreground/65"
             >
               <span>Export AI Spec</span>
               <ArrowUpRight className="size-3.5 opacity-50 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-90" />
@@ -1244,6 +1285,10 @@ function SpecsTab({ projectId }: { projectId: string }) {
               <SpecExportStatusCard
                 runId={runId}
                 onComplete={handleComplete}
+                onTerminal={() => {
+                  setRunId(null)
+                  setExportId(null)
+                }}
               />
             </div>
           </div>
@@ -1251,11 +1296,15 @@ function SpecsTab({ projectId }: { projectId: string }) {
 
         {/* Error state */}
         {error && (
-          <div className="mx-5 mb-5 rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-4 py-3">
-            <p className="text-xs text-[var(--state-error)] text-pretty">{error}</p>
+          <div className="mx-5 mb-5 rounded-lg bg-white/[0.03] px-3.5 py-2.5">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle className="size-3 shrink-0 text-foreground/40" />
+              <span className="text-xs text-foreground/60">Export failed</span>
+            </div>
+            <p className="text-[11px] text-foreground/25 text-pretty leading-snug">{error}</p>
             <button
               onClick={handleReset}
-              className="cursor-pointer mt-1.5 text-xs text-foreground/35 hover:text-foreground transition-colors"
+              className="mt-1.5 text-[11px] text-foreground/20 hover:text-foreground/50 transition-colors cursor-pointer"
             >
               Try again
             </button>
@@ -1264,38 +1313,24 @@ function SpecsTab({ projectId }: { projectId: string }) {
 
         {/* Complete state — ready to save */}
         {exportId && (
-          <div className="flex-1 px-5 pb-5">
-            <div className="space-y-3">
-            {/* Success badge */}
-            <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-4 py-3">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="inline-block size-1.5 rounded-full bg-[var(--state-success)]" />
-                <span className="text-xs font-medium text-[var(--state-success)]">
-                  Export complete
-                </span>
-              </div>
-              <p className="text-[11px] leading-snug text-foreground/35">
-                5 files generated and ready to save.
-              </p>
-            </div>
-
+          <div className="flex-1 flex flex-col px-5 pb-5 min-h-0">
             {/* Write progress */}
             {saveProgress && saveProgress.phase === "writing" && (
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3">
-                <div className="flex items-center gap-2.5 mb-2.5">
-                  <Loader2 className="size-3.5 shrink-0 animate-spin text-[var(--accent-primary)]" />
-                  <span className="text-xs font-normal text-foreground/80">
-                    Writing {saveProgress.current}/{saveProgress.total} files…
+              <div className="rounded-lg bg-white/[0.03] px-3.5 py-2.5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 className="size-3 shrink-0 animate-spin text-foreground/40" />
+                  <span className="text-xs text-foreground/60">
+                    Writing {saveProgress.current}/{saveProgress.total}
                   </span>
                 </div>
-                <div className="h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                <div className="h-0.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-[var(--accent-primary)] transition-all duration-200"
+                    className="h-full rounded-full bg-foreground/20 transition-all duration-200"
                     style={{ width: `${saveProgress.total > 0 ? (saveProgress.current / saveProgress.total) * 100 : 0}%` }}
                   />
                 </div>
                 {saveProgress.currentFile && (
-                  <p className="mt-1.5 text-[11px] text-foreground/30 font-[family-name:var(--font-geist-mono)] truncate leading-snug">
+                  <p className="mt-1.5 text-[11px] text-foreground/25 font-[family-name:var(--font-geist-mono)] truncate leading-snug">
                     {saveProgress.currentFile}
                   </p>
                 )}
@@ -1304,85 +1339,162 @@ function SpecsTab({ projectId }: { projectId: string }) {
 
             {/* Saved confirmation */}
             {savedPath && !saveError && (
-              <div className="rounded-xl border border-[var(--state-success)]/20 bg-[var(--state-success)]/5 px-4 py-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Check className="size-3.5 shrink-0 text-[var(--state-success)]" />
-                  <span className="text-xs font-medium text-[var(--state-success)]">
-                    {savedPath === "downloaded" ? "ZIP downloaded" : "Project saved"}
+              <div className="rounded-lg bg-white/[0.03] px-3.5 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Check className="size-3 shrink-0 text-foreground/50" />
+                  <span className="text-xs text-foreground/60">
+                    {savedPath === "downloaded" ? "Downloaded" : "Saved"}
                   </span>
+                  {savedPath !== "downloaded" && (
+                    <span className="text-[11px] text-foreground/25 font-[family-name:var(--font-geist-mono)] truncate">
+                      …/{savedPath}
+                    </span>
+                  )}
+                  <button
+                    onClick={handleReset}
+                    className="ml-auto flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-foreground/30 transition-all hover:bg-white/[0.06] hover:text-foreground/60 active:scale-90"
+                    title="Generate another"
+                  >
+                    <RotateCcw className="size-3" />
+                  </button>
                 </div>
-                {savedPath !== "downloaded" && (
-                  <p className="text-[11px] text-foreground/30 font-[family-name:var(--font-geist-mono)] truncate pl-5.5 leading-snug">
-                    …/{savedPath}/
-                  </p>
-                )}
               </div>
             )}
 
             {/* Save error */}
             {saveError && (
-              <div className="rounded-xl border border-[var(--state-error)]/20 bg-[var(--state-error)]/5 px-4 py-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <AlertCircle className="size-3.5 shrink-0 text-[var(--state-error)]" />
-                  <span className="text-xs font-medium text-[var(--state-error)]">
-                    Save failed
-                  </span>
+              <div className="rounded-lg bg-white/[0.03] px-3.5 py-2.5">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="size-3 shrink-0 text-foreground/40" />
+                  <span className="text-xs text-foreground/60">Save failed</span>
                 </div>
-                <p className="text-[11px] text-foreground/30 truncate pl-5.5 leading-snug">
+                <p className="mt-1 text-[11px] text-foreground/25 font-[family-name:var(--font-geist-mono)] truncate leading-snug">
                   {saveError}
                 </p>
               </div>
             )}
 
-            {/* Primary action — Save Project / Download ZIP */}
+            {/* Primary action */}
             {!savedPath && (
               <button
                 onClick={handleSaveProject}
                 disabled={saving}
-                className="group flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.05] px-4 text-sm font-medium tracking-tight leading-none text-foreground/90 shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset] transition-all duration-300 hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-foreground hover:shadow-[0_4px_24px_-4px_rgba(255,255,255,0.08)] disabled:opacity-50"
+                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-white/[0.07] text-xs font-medium text-foreground/70 transition-colors hover:bg-white/[0.10] hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
               >
                 {saving ? (
                   <>
-                    <Loader2 className="size-3.5 animate-spin" />
-                    Saving…
+                    <Loader2 className="size-3 animate-spin" />
+                    Saving
                   </>
                 ) : fsSupported ? (
                   <>
-                    <FolderOpen className="size-3.5" />
-                    Save Project
+                    <FolderOpen className="size-3" />
+                    Save to disk
                   </>
                 ) : (
                   <>
-                    <Download className="size-3.5" />
+                    <Download className="size-3" />
                     Download ZIP
                   </>
                 )}
               </button>
             )}
 
-            {/* Secondary action — ZIP fallback when FS API is primary */}
+            {/* Secondary action */}
             {!savedPath && fsSupported && (
               <button
                 onClick={handleDownloadZip}
                 disabled={saving}
-                className="cursor-pointer w-full text-center text-xs text-foreground/35 hover:text-foreground transition-colors disabled:opacity-50 py-1"
+                className="flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg text-[11px] text-foreground/30 transition-colors hover:text-foreground/60 disabled:opacity-40"
               >
-                <Download className="inline mr-1 size-3 -mt-px" />
-                Download as ZIP instead
+                <Download className="size-3" />
+                or download ZIP
               </button>
             )}
 
-            {/* Generate another */}
-            <button
-              onClick={handleReset}
-              className="cursor-pointer w-full text-center text-xs text-foreground/35 hover:text-foreground transition-colors py-1"
-            >
-              Generate another
-            </button>
+            {/* Steps — fill remaining space after download */}
+            {savedPath && !saveError && (
+              <div className="mt-3 flex-1 flex flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                <div className="px-4 pt-4 pb-3">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-foreground/45">
+                    How to use
+                  </p>
+                </div>
+
+                <div className="flex-1 flex flex-col justify-between px-4 pb-4">
+                  {[
+                    {
+                      num: "1",
+                      title: "Extract the ZIP",
+                      desc: "Unzip the downloaded file into your project folder",
+                    },
+                    {
+                      num: "2",
+                      title: "Open in your IDE",
+                      desc: "Open the extracted folder in VS Code, Cursor, or your editor",
+                    },
+                    {
+                      num: "3",
+                      title: "Start your agent & type:",
+                      logos: ["/claude-color.webp", "/codex.webp", "/opencode.webp"],
+                      code: "@AGENTS.md",
+                    },
+                    {
+                      num: "4",
+                      title: "Let it work",
+                      desc: "The agent reads your spec, asks questions, then builds",
+                    },
+                    {
+                      num: "5",
+                      title: "Ship it",
+                      desc: "Review, iterate — progress tracked for you",
+                    },
+                  ].map((step, i) => (
+                    <div key={step.num} className="flex gap-3 relative">
+                      {/* Vertical connector */}
+                      {i < 4 && (
+                        <div className="absolute left-[10px] top-[20px] bottom-[-6px] w-px bg-white/[0.06]" />
+                      )}
+                      {/* Number */}
+                      <div className="relative z-10 flex size-[22px] shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-[10px] font-medium text-foreground/50 tabular-nums">
+                        {step.num}
+                      </div>
+                      {/* Text */}
+                      <div className="min-w-0 flex-1 pt-px">
+                        <p className="text-[13px] font-medium leading-snug text-foreground/70">
+                          {step.title}
+                        </p>
+                        {step.desc && (
+                          <p className="mt-1 text-[11.5px] leading-relaxed text-foreground/35">
+                            {step.desc}
+                          </p>
+                        )}
+                        {step.logos && (
+                          <div className="mt-2 flex items-center gap-2">
+                            {step.logos.map((src) => (
+                              <img
+                                key={src}
+                                src={src}
+                                alt=""
+                                className="size-[18px] rounded-[3px] object-contain opacity-60"
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {step.code && (
+                          <code className="mt-2 inline-block rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[11.5px] font-[family-name:var(--font-geist-mono)] text-foreground/60">
+                            {step.code}
+                          </code>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
     </div>
   )
 }

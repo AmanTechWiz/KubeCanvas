@@ -61,6 +61,8 @@ const SECTIONS = [
   "implementationPlan",
   "implementationQuestions",
   "implementationGuardrails",
+  "instructions",
+  "claudeMd",
 ] as const;
 
 type SpecSection = (typeof SECTIONS)[number];
@@ -70,8 +72,8 @@ type SpecSection = (typeof SECTIONS)[number];
 export const generateAiSpec = task({
   id: "generate-ai-spec",
   retry: { maxAttempts: 2 },
-  run: async (payload: { projectId: string; userId: string }) => {
-    const { projectId, userId } = payload;
+  run: async (payload: { projectId: string; userId: string; projectDescription?: string }) => {
+    const { projectId, userId, projectDescription } = payload;
 
     console.log(`[AI Spec] Starting generation for project ${projectId}`);
 
@@ -129,6 +131,7 @@ export const generateAiSpec = task({
           architectureData,
           projectName: project.name,
           projectId,
+          projectDescription,
         },
       }))
     );
@@ -141,6 +144,8 @@ export const generateAiSpec = task({
       implementationPlan: "IMPLEMENTATION_PLAN.md",
       implementationQuestions: "IMPLEMENTATION_QUESTIONS.md",
       implementationGuardrails: "IMPLEMENTATION_GUARDRAILS.md",
+      instructions: "AGENTS.md",
+      claudeMd: "CLAUDE.md",
     };
 
     let successCount = 0;

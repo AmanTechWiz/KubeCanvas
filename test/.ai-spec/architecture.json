@@ -1,0 +1,249 @@
+{
+  "project": {
+    "name": "test",
+    "description": "A distributed presence and discovery system for Android clients with P2P capability.",
+    "version": "1.0.0",
+    "generatedAt": "2023-10-27T10:00:00Z"
+  },
+  "nodes": [
+    {
+      "id": "android-client-a",
+      "label": "Android Client A",
+      "description": "Instance of the mobile application",
+      "technology": "Android SDK / Kotlin",
+      "shape": "circle",
+      "layer": "entry",
+      "color": "blue",
+      "logo": "android"
+    },
+    {
+      "id": "android-client-b",
+      "label": "Android Client B",
+      "description": "Instance of the mobile application",
+      "technology": "Android SDK / Kotlin",
+      "shape": "circle",
+      "layer": "entry",
+      "color": "blue",
+      "logo": "android"
+    },
+    {
+      "id": "nginx-lb",
+      "label": "Nginx Load Balancer",
+      "description": "Traffic distribution and SSL termination",
+      "technology": "Nginx 1.25",
+      "shape": "diamond",
+      "layer": "edge",
+      "color": "neutral",
+      "logo": "nginx"
+    },
+    {
+      "id": "discovery-service",
+      "label": "Discovery Service",
+      "description": "Handles client registration and presence logic",
+      "technology": "Node.js 20",
+      "shape": "rectangle",
+      "layer": "service",
+      "color": "blue",
+      "logo": "nodejs"
+    },
+    {
+      "id": "redis-presence",
+      "label": "Redis Presence Store",
+      "description": "Fast key-value store for client heartbeat data",
+      "technology": "Redis 7",
+      "shape": "cylinder",
+      "layer": "data",
+      "color": "green",
+      "logo": "redis"
+    },
+    {
+      "id": "prometheus",
+      "label": "Prometheus",
+      "description": "Metrics collection and time-series storage",
+      "technology": "Prometheus 2.45",
+      "shape": "rectangle",
+      "layer": "observability",
+      "color": "neutral",
+      "logo": "prometheus"
+    },
+    {
+      "id": "grafana",
+      "label": "Grafana",
+      "description": "Visualization layer for system health",
+      "technology": "Grafana 10",
+      "shape": "rectangle",
+      "layer": "observability",
+      "color": "neutral",
+      "logo": "grafana"
+    }
+  ],
+  "edges": [
+    {
+      "id": "client-a-to-nginx",
+      "source": "android-client-a",
+      "target": "nginx-lb",
+      "label": "Registers"
+    },
+    {
+      "id": "client-b-to-nginx",
+      "source": "android-client-b",
+      "target": "nginx-lb",
+      "label": "Registers"
+    },
+    {
+      "id": "nginx-to-discovery",
+      "source": "nginx-lb",
+      "target": "discovery-service",
+      "label": "Routes"
+    },
+    {
+      "id": "discovery-to-redis",
+      "source": "discovery-service",
+      "target": "redis-presence",
+      "label": "Persists"
+    },
+    {
+      "id": "p2p-link",
+      "source": "android-client-a",
+      "target": "android-client-b",
+      "label": "Direct P2P Link"
+    },
+    {
+      "id": "metrics-to-prometheus",
+      "source": "discovery-service",
+      "target": "prometheus",
+      "label": "Exposes"
+    },
+    {
+      "id": "grafana-queries",
+      "source": "grafana",
+      "target": "prometheus",
+      "label": "Queries"
+    }
+  ],
+  "technologies": [
+    {
+      "name": "Android SDK",
+      "version": null,
+      "role": "Client runtime",
+      "category": "runtime"
+    },
+    {
+      "name": "Nginx",
+      "version": "1.25",
+      "role": "Edge load balancing",
+      "category": "other"
+    },
+    {
+      "name": "Node.js",
+      "version": "20",
+      "role": "Service runtime",
+      "category": "runtime"
+    },
+    {
+      "name": "Redis",
+      "version": "7",
+      "role": "Presence store",
+      "category": "database"
+    },
+    {
+      "name": "Prometheus",
+      "version": "2.45",
+      "role": "Metrics engine",
+      "category": "monitoring"
+    },
+    {
+      "name": "Grafana",
+      "version": "10",
+      "role": "Dashboarding",
+      "category": "monitoring"
+    }
+  ],
+  "layers": [
+    {
+      "name": "entry",
+      "description": "Client-side applications",
+      "nodeIds": ["android-client-a", "android-client-b"]
+    },
+    {
+      "name": "edge",
+      "description": "Traffic ingress and load balancing",
+      "nodeIds": ["nginx-lb"]
+    },
+    {
+      "name": "service",
+      "description": "Business logic and API processing",
+      "nodeIds": ["discovery-service"]
+    },
+    {
+      "name": "data",
+      "description": "Persistence layer",
+      "nodeIds": ["redis-presence"]
+    },
+    {
+      "name": "observability",
+      "description": "Monitoring and visualization",
+      "nodeIds": ["prometheus", "grafana"]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "android-client-a",
+      "target": "nginx-lb",
+      "type": "command",
+      "description": "Register client presence"
+    },
+    {
+      "source": "android-client-b",
+      "target": "nginx-lb",
+      "type": "command",
+      "description": "Register client presence"
+    },
+    {
+      "source": "nginx-lb",
+      "target": "discovery-service",
+      "type": "sync",
+      "description": "Forward HTTP/WebSocket traffic"
+    },
+    {
+      "source": "discovery-service",
+      "target": "redis-presence",
+      "type": "query",
+      "description": "Write/Read presence state"
+    },
+    {
+      "source": "android-client-a",
+      "target": "android-client-b",
+      "type": "sync",
+      "description": "Peer-to-peer data channel"
+    },
+    {
+      "source": "discovery-service",
+      "target": "prometheus",
+      "type": "async",
+      "description": "Push metrics data"
+    },
+    {
+      "source": "grafana",
+      "target": "prometheus",
+      "type": "query",
+      "description": "Fetch metrics for visualization"
+    }
+  ],
+  "assumptions": [
+    "Clients have persistent internet connectivity",
+    "P2P connectivity is handled via signaling",
+    "Redis is configured for high availability"
+  ],
+  "constraints": [
+    "Presence updates must be sub-second latency",
+    "Direct P2P links are subject to NAT traversal limitations"
+  ],
+  "externalDependencies": [
+    {
+      "name": "STUN/TURN Servers",
+      "purpose": "NAT traversal for P2P connections",
+      "fallback": "Relay via server"
+    }
+  ]
+}
