@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from "react"
 import ReactDOM from "react-dom"
-import { Bot, X, Send, Loader2, MessageSquare, StopCircle, Trash2, Download, FileText, Package, FolderOpen, Check, AlertCircle, ArrowUpRight, RotateCcw } from "lucide-react"
+import { Bot, X, Send, Loader2, Trash2, Download, FileText,  FolderOpen, Check, AlertCircle, ArrowUpRight, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SpiralSpinner } from "@/components/ui/spiral-spinner"
@@ -10,7 +10,7 @@ import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import { useRealtimeRun } from "@trigger.dev/react-hooks"
 import { renderFormattedText } from "@/lib/format-chat"
-import { Z } from "@/lib/z-index"
+
 import {
   isFileSystemAccessSupported,
   writeProjectToDirectory,
@@ -33,15 +33,19 @@ interface AiSidebarProps {
 
 function ArchitectStatusCard({
   runId,
+  isCompleted: isCompletedProp = false,
   onComplete,
   onCancel,
   onRevert,
+  onRevertRequest,
   previousCanvasJson,
 }: {
   runId: string
+  isCompleted?: boolean
   onComplete?: (run: any) => void
   onCancel?: () => void
   onRevert?: (previousCanvasJson: any) => void
+  onRevertRequest?: (previousCanvasJson: any) => void
   previousCanvasJson?: any
 }) {
   const [accessToken, setAccessToken] = useState<string | undefined>(undefined)
@@ -79,12 +83,12 @@ function ArchitectStatusCard({
       }
     },
   })
-  const status = run?.status
+  // If we already know the run completed (persisted isCompleted flag),
+  // treat it as done immediately — avoids the 1-2 s spinner flash while
+  // useRealtimeRun fetches the status from Trigger.dev.
+  const status = run?.status ?? (isCompletedProp ? "COMPLETED" : undefined)
 
   const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
-  // Show spinner + cancel immediately — the card only renders after the
-  // run has been triggered, so "in-progress" is the correct default
-  // even before the realtime subscription resolves status.
   const isRunning = !isDone
 
   // Safety net: when Trigger.dev confirms cancellation, re-clear the cursor.
@@ -162,7 +166,7 @@ function ArchitectStatusCard({
         )}
         {status === "COMPLETED" && previousCanvasJson && !cancelling && (
           <button
-            onClick={() => onRevert?.(previousCanvasJson)}
+            onClick={() => onRevertRequest?.(previousCanvasJson)}
             className="cursor-pointer rounded-full border border-white/[0.12] bg-transparent px-3 py-0.5 text-[11px] font-normal text-muted-foreground hover:text-foreground transition-colors"
           >
             Revert
@@ -198,7 +202,7 @@ function ArchitectureConfirmCard({
       <p className="text-[12px] font-normal text-amber-400/90 mb-2">
         Architecture changes cannot be undone
       </p>
-      <p className="text-[11px] leading-relaxed text-muted-foreground/70 mb-3 line-clamp-3">
+      <p className="text-[11px] leading-relaxed text-muted-foreground/70 mb-3 line-clamp-1">
         {prompt}
       </p>
       <div className="flex gap-2">
@@ -221,7 +225,25 @@ function ArchitectureConfirmCard({
   )
 }
 
-// ── Chat Tab ────────────────────────────────────────────────────────
+
+function normalizeToolStates(parts: any[] | undefined): any[] | undefined {
+  if (!parts) return parts
+  return parts.map((p: any) => {
+    if (
+      p.type === "tool-generateArchitecture" &&
+      (p.state === "input-streaming" || p.state === "input-available")
+    ) {
+      return {
+        ...p,
+        state: "output-available",
+        output: p.output ?? { requiresConfirmation: true },
+      }
+    }
+    return p
+  })
+}
+
+// ── Chat Tab ───
 
 function ChatTab({
   projectId,
@@ -240,6 +262,7 @@ function ChatTab({
   const [completedArchitectTexts, setCompletedArchitectTexts] = useState<
     Map<string, string>
   >(new Map())
+  const [pendingRevert, setPendingRevert] = useState<any>(null)
   const archRunsRef = useRef(archRuns)
   archRunsRef.current = archRuns
 
@@ -307,7 +330,7 @@ function ChatTab({
             id: m.id,
             role: m.role,
             content: m.content,
-            parts: m.parts ?? [{ type: "text", text: m.content }],
+            parts: normalizeToolStates(m.parts ?? [{ type: "text", text: m.content }]),
           }))
           setMessages(loaded)
           return
@@ -316,7 +339,11 @@ function ChatTab({
         const stored = localStorage.getItem(`chat-${projectId}-${currentUserId}`)
         if (stored) {
           try {
-            setMessages(JSON.parse(stored))
+            const parsed = JSON.parse(stored)
+            setMessages(parsed.map((m: any) => ({
+              ...m,
+              parts: normalizeToolStates(m.parts),
+            })))
           } catch {}
         }
       })
@@ -324,7 +351,11 @@ function ChatTab({
         const stored = localStorage.getItem(`chat-${projectId}-${currentUserId}`)
         if (stored) {
           try {
-            setMessages(JSON.parse(stored))
+            const parsed = JSON.parse(stored)
+            setMessages(parsed.map((m: any) => ({
+              ...m,
+              parts: normalizeToolStates(m.parts),
+            })))
           } catch {}
         }
       })
@@ -356,11 +387,11 @@ function ChatTab({
       const msg = messages[i] as any
       if (msg.role === "assistant") {
         for (const part of msg.parts ?? []) {
-          if (
-            part.type === "tool-generateArchitecture" &&
-            (part.state === "input-streaming" || part.state === "input-available")
-          ) {
-            return true
+          if (part.type === "tool-generateArchitecture") {
+            // During input streaming/awaiting args
+            if (part.state === "input-streaming" || part.state === "input-available") return true
+            // While confirmation card or status card is visible (output-available)
+            if (part.state === "output-available" && part.output?.requiresConfirmation && !part.output?.dismissed && !part.output?.cancelled && !part.output?.confirmed) return true
           }
         }
       }
@@ -697,12 +728,14 @@ function ChatTab({
 
                             const runId = part.output.runId || archRuns.get(message.id)
                             const isConfirmed = part.output.confirmed || archRuns.has(message.id)
+                            const isCompleted = part.output.isCompleted || completedArchitectTexts.has(message.id)
 
                             if (isConfirmed && runId) {
                               return (
                                 <div key={`run-${runId}`} className="flex flex-col gap-1">
                                   <ArchitectStatusCard
                                     runId={runId}
+                                    isCompleted={isCompleted}
                                     onComplete={(run) =>
                                       handleArchitectComplete(message.id, run)
                                     }
@@ -711,6 +744,9 @@ function ChatTab({
                                     }
                                     onRevert={(prev) =>
                                       handleArchitectRevert(prev)
+                                    }
+                                    onRevertRequest={(prev) =>
+                                      setPendingRevert(prev)
                                     }
                                     previousCanvasJson={part.output?.previousCanvasJson}
                                   />
@@ -847,19 +883,58 @@ function ChatTab({
               <Send className="size-4" />
             )}
           </Button>
-          {status === "streaming" && (
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              onClick={stop}
-              className="cursor-pointer shrink-0 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground hover:text-[var(--state-error)] hover:bg-white/[0.1]"
-            >
-              <StopCircle className="size-4" />
-            </Button>
-          )}
         </form>
       </div>
+
+      {/* Revert confirmation dialog */}
+      {pendingRevert &&
+        ReactDOM.createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-xs"
+            onClick={() => setPendingRevert(null)}
+          >
+            <div
+              className="mx-4 w-full max-w-sm rounded-xl border border-white/[0.08] bg-[#111114] p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--state-error)]/10">
+                  <RotateCcw className="size-4 text-[var(--state-error)]" />
+                </div>
+                <div>
+                  <p className="text-sm font-normal tracking-[-0.01em] text-foreground">
+                    Revert changes?
+                  </p>
+                  <p className="text-xs text-muted-foreground/80">
+                    Canvas will be restored to its previous state. This cannot be
+                    undone.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPendingRevert(null)}
+                  className="cursor-pointer rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    handleArchitectRevert(pendingRevert)
+                    setPendingRevert(null)
+                  }}
+                  className="cursor-pointer rounded-lg bg-[var(--state-error)] text-white hover:bg-[var(--state-error)]/80"
+                >
+                  Revert
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
@@ -1426,12 +1501,12 @@ function SpecsTab({ projectId }: { projectId: string }) {
                     {
                       num: "1",
                       title: "Extract the ZIP",
-                      desc: "Unzip the downloaded file into your project folder",
+                      desc: "Unzip the downloaded file into your project folder.",
                     },
                     {
                       num: "2",
                       title: "Open in your IDE",
-                      desc: "Open the extracted folder in VS Code, Cursor, or your editor",
+                      desc: "Open the extracted folder in VS Code, Cursor, or your editor.",
                     },
                     {
                       num: "3",
@@ -1442,12 +1517,12 @@ function SpecsTab({ projectId }: { projectId: string }) {
                     {
                       num: "4",
                       title: "Let it work",
-                      desc: "The agent reads your spec, asks questions, then builds",
+                      desc: "The agent reads your spec, asks questions, then builds.",
                     },
                     {
                       num: "5",
                       title: "Ship it",
-                      desc: "Review, iterate — progress tracked for you",
+                      desc: "Review, iterate and track progress!",
                     },
                   ].map((step, i) => (
                     <div key={step.num} className="flex gap-3 relative">
@@ -1513,12 +1588,41 @@ export function AiSidebar({
   const chatRef = useRef<{ clearChat: () => void }>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"chat" | "specs">("chat")
+  const [closing, setClosing] = useState(false)
+  const closingRef = useRef(false)
+
+  // Animate open on first mount
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    if (isOpen) {
+      requestAnimationFrame(() => setMounted(true))
+    } else {
+      setMounted(false)
+      setClosing(false)
+    }
+  }, [isOpen])
+
+  const handleClose = useCallback(() => {
+    if (closingRef.current) return
+    closingRef.current = true
+    setClosing(true)
+    // Let the slide-out animation finish, then unmount
+    setTimeout(() => {
+      closingRef.current = false
+      setClosing(false)
+      onClose()
+    }, 260)
+  }, [onClose])
 
   if (!isOpen) return null
 
   return (
     <div
-      className="fixed right-2 top-[56px] bottom-2 z-50 flex w-80 max-w-[calc(100vw-1rem)] flex-col rounded-xl border border-white/[0.08] bg-white/[0.08] backdrop-blur-2xl backdrop-saturate-150"
+      className={`fixed right-2 top-[56px] bottom-2 z-50 flex w-80 max-w-[calc(100vw-1rem)] flex-col rounded-xl border border-white/[0.08] bg-white/[0.08] backdrop-blur-2xl backdrop-saturate-150 transition-all duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        mounted && !closing
+          ? "translate-x-0 opacity-100 scale-100"
+          : "translate-x-[calc(100%+12px)] opacity-0 scale-95"
+      }`}
     >
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] px-4">
@@ -1542,7 +1646,7 @@ export function AiSidebar({
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={onClose}
+            onClick={handleClose}
             className="cursor-pointer rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground"
           >
             <X className="size-4" />

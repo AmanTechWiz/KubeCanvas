@@ -6,7 +6,6 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   Share2,
-  Sparkles,
   LayoutTemplate,
   Save,
 } from "lucide-react"
@@ -156,16 +155,22 @@ export function WorkspaceShell({
 
         {/* Floating AI toggle — bottom-right */}
         {!aiSidebarOpen && (
-          <div className="absolute bottom-4 right-4 z-[60]">
-            <Button
-              size="icon-lg"
-              variant="ghost"
+          <div className="absolute bottom-4 right-4 z-[60] group">
+            {/* Outer glow pulse ring */}
+            <span className="pointer-events-none absolute -inset-3 rounded-full bg-white/[0.04] blur-xl ai-pulse group-hover:bg-white/[0.07]" />
+            <button
               onClick={() => setAiSidebarOpen(true)}
               aria-label="Open AI sidebar"
-              className="rounded-full cursor-pointer border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_16px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.06)] text-muted-foreground hover:text-accent-ai"
+              className="relative flex size-14 cursor-pointer items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_2px_16px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.06)] transition-all duration-300 ease-out hover:scale-110 hover:border-white/[0.15] hover:bg-white/[0.08] hover:shadow-[0_4px_28px_rgba(100,87,249,0.18),0_2px_16px_rgba(0,0,0,0.3),inset_0_0.5px_0_rgba(255,255,255,0.1)] active:scale-95"
             >
-              <Sparkles className="h-5 w-5" />
-            </Button>
+              <img
+                src="/robot.png"
+                alt="KubeAI"
+                width={28}
+                height={28}
+                className="block transition-transform duration-300 group-hover:rotate-[8deg] group-hover:scale-105"
+              />
+            </button>
           </div>
         )}
 

@@ -144,6 +144,30 @@
     --z-cursor: 9999;
 }
 
+/* ── Custom scrollbar ───────────────────────────────────────────────── */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
 /* ── Agent cursor wobble animation ──────────────────────────────────── */
 @keyframes agent-wobble-x {
     0%, 100% { transform: translateX(0); }
@@ -216,5 +240,21 @@
     .sp {
         animation: none;
         opacity: 0.45;
+    }
+}
+
+/* ── Floating AI button pulse ring ──────────────────────────────────── */
+@keyframes ai-pulse {
+    0%, 100% { opacity: 0; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.15); }
+}
+
+.ai-pulse {
+    animation: ai-pulse 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ai-pulse {
+        animation: none;
     }
 }

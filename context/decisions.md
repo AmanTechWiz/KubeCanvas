@@ -199,6 +199,34 @@ Updated after each meaningful implementation change.
 
 ---
 
+## AI Sidebar UX
+
+### Tool State Normalization
+- `normalizeToolStates()` upgrades stale `input-streaming`/`input-available` tool states to `output-available` on message load (Prisma + localStorage)
+- Prevents spinner flash on chat reload — previously, reloaded messages showed stale tool states that never resolved
+- Fallback output `{ requiresConfirmation: true }` ensures confirm card renders correctly
+
+### Revert Confirmation Flow
+- Two-path revert: `onRevert` (direct, for cancel flow) and `onRevertRequest` (shows confirmation dialog)
+- Confirmation dialog rendered via `ReactDOM.createPortal` to `document.body` with glassy styling
+- Backdrop click and Escape dismiss the dialog; Revert sends `POST /api/ai/design/revert`
+
+### Sidebar Animation
+- Slide-out transition using `closing`/`mounted` states with 250ms `cubic-bezier(0.32,0.72,0,1)` ease
+- `handleClose()` delays `onClose` callback until animation completes (260ms)
+- Open animation on first mount via `requestAnimationFrame`
+
+### Floating AI Button
+- Custom `robot.png` image instead of lucide `Sparkles` icon
+- Glassy styling with hover: `scale-110`, purple glow shadow, border brightening
+- `ai-pulse` CSS keyframe for outer glow ring; respects `prefers-reduced-motion`
+
+### Scrollbar
+- Global thin scrollbar: `scrollbar-width: thin`, `scrollbar-color: rgba(255,255,255,0.08) transparent`
+- WebKit: 6px width, transparent track, white/8% thumb with `border-radius: 999px`
+
+---
+
 ## Technology Logo System
 
 - `tech-stack-icons` package provides 690+ SVG icons
