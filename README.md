@@ -27,7 +27,7 @@ Next.js 16 · Liveblocks · React Flow · Clerk · Prisma/PostgreSQL · Trigger.
 - **AI Memory** — Store design decisions, user preferences, and rationale across sessions so the AI remembers context
 - **Spec Generation** — Convert the canvas graph into a downloadable Markdown technical specification
 - **Spec Download** — Export specs as a ZIP folder ready to paste into a project
-- **Improved Canvas Mutations** — Smarter layout, fewer orphan nodes, better edge routing from the AI architect
+- **Improved Canvas Mutations** — Smarter layout, fewer orphan nodes, better edge routing from the AI architect (investigated dagre alternatives: ELK.js, position preservation, handle routing fixes)
 - **Shared Chat History** — Persist architect responses so they're visible across collaborators and reloads
 - **Performance** — Canvas rendering optimization, faster AI response times, edge case handling
 
