@@ -51,9 +51,13 @@ function ArchitectStatusCard({
   const [accessToken, setAccessToken] = useState<string | undefined>(undefined)
   const [cancelling, setCancelling] = useState(false)
 
+  // Already-finished runs never re-subscribe — that was the reopen flash:
+  // token fetch + realtime status lag showed "Architecting..." for 2–3s.
+  const needsLiveStatus = !isCompletedProp
+
   // Fetch a Trigger.dev public token scoped to this run
   useEffect(() => {
-    if (!runId) return
+    if (!runId || !needsLiveStatus) return
     let cancelled = false
     fetch("/api/ai/design/token", {
       method: "POST",
@@ -72,21 +76,21 @@ function ArchitectStatusCard({
     return () => {
       cancelled = true
     }
-  }, [runId])
+  }, [runId, needsLiveStatus])
 
   const { run } = useRealtimeRun(runId, {
     accessToken,
-    enabled: !!accessToken,
+    enabled: needsLiveStatus && !!accessToken,
     onComplete: (completedRun, err) => {
       if (!err && completedRun?.status === "COMPLETED") {
         onComplete?.(completedRun)
       }
     },
   })
-  // If we already know the run completed (persisted isCompleted flag),
-  // treat it as done immediately — avoids the 1-2 s spinner flash while
-  // useRealtimeRun fetches the status from Trigger.dev.
-  const status = run?.status ?? (isCompletedProp ? "COMPLETED" : undefined)
+  // Persisted completion always wins — never flash spinner over a finished run.
+  const status = isCompletedProp
+    ? "COMPLETED"
+    : run?.status
 
   const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
   const isRunning = !isDone
@@ -200,7 +204,7 @@ function ArchitectureConfirmCard({
   return (
     <div className="mx-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3">
       <p className="text-[12px] font-normal text-amber-400/90 mb-2">
-        Architecture changes cannot be undone
+        This will modify your canvas — undo anytime with ⌘Z
       </p>
       <p className="text-[11px] leading-relaxed text-muted-foreground/70 mb-3 line-clamp-1">
         {prompt}
@@ -240,6 +244,43 @@ function normalizeToolStates(parts: any[] | undefined): any[] | undefined {
       }
     }
     return p
+  })
+}
+
+/**
+ * Recover missing `isCompleted` flags after reload.
+ * Completion always appends a later assistant summary message; if one exists
+ * after a confirmed run, the architecture already finished.
+ */
+function recoverCompletedArchitectFlags(messages: any[]): any[] {
+  return messages.map((m, i) => {
+    if (!m.parts) return m
+    const parts = m.parts.map((p: any) => {
+      if (
+        p.type !== "tool-generateArchitecture" ||
+        p.state !== "output-available" ||
+        !p.output?.runId ||
+        !p.output?.confirmed ||
+        p.output?.cancelled ||
+        p.output?.isCompleted
+      ) {
+        return p
+      }
+      const hasLaterAssistant = messages
+        .slice(i + 1)
+        .some(
+          (later: any) =>
+            later.role === "assistant" &&
+            (later.parts?.some((lp: any) => lp.type === "text" && lp.text) ||
+              (typeof later.content === "string" && later.content.length > 0)),
+        )
+      if (!hasLaterAssistant) return p
+      return {
+        ...p,
+        output: { ...p.output, isCompleted: true },
+      }
+    })
+    return { ...m, parts }
   })
 }
 
@@ -326,12 +367,14 @@ function ChatTab({
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.messages?.length > 0) {
-          const loaded = data.messages.map((m: any) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            parts: normalizeToolStates(m.parts ?? [{ type: "text", text: m.content }]),
-          }))
+          const loaded = recoverCompletedArchitectFlags(
+            data.messages.map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              parts: normalizeToolStates(m.parts ?? [{ type: "text", text: m.content }]),
+            })),
+          )
           setMessages(loaded)
           return
         }
@@ -340,10 +383,14 @@ function ChatTab({
         if (stored) {
           try {
             const parsed = JSON.parse(stored)
-            setMessages(parsed.map((m: any) => ({
-              ...m,
-              parts: normalizeToolStates(m.parts),
-            })))
+            setMessages(
+              recoverCompletedArchitectFlags(
+                parsed.map((m: any) => ({
+                  ...m,
+                  parts: normalizeToolStates(m.parts),
+                })),
+              ),
+            )
           } catch {}
         }
       })
@@ -352,10 +399,14 @@ function ChatTab({
         if (stored) {
           try {
             const parsed = JSON.parse(stored)
-            setMessages(parsed.map((m: any) => ({
-              ...m,
-              parts: normalizeToolStates(m.parts),
-            })))
+            setMessages(
+              recoverCompletedArchitectFlags(
+                parsed.map((m: any) => ({
+                  ...m,
+                  parts: normalizeToolStates(m.parts),
+                })),
+              ),
+            )
           } catch {}
         }
       })
@@ -554,14 +605,34 @@ function ChatTab({
   )
 
   const handleArchitectComplete = useCallback(
-    (messageId: string, _run: any) => {
+    (messageId: string, run: any) => {
       setCompletedArchitectTexts((prev) => {
         const next = new Map(prev)
         next.set(messageId, "completed")
         return next
       })
 
+      // Extract summary from run output
+      const output = run?.output ?? run?.metadata ?? {}
+      const rawSummary = output.summary
+        ?? (output.mode === "fresh"
+          ? `Designed an architecture with ${output.nodesCount ?? "several"} components.`
+          : `Updated the architecture with the requested changes.`)
+      const summary = `✓ ${rawSummary}`
+
       setMessages((prevMessages) => {
+        // Already completed + summary present (e.g. reopen race) — no-op
+        const existing = prevMessages.find((m) => m.id === messageId) as any
+        const alreadyDone = existing?.parts?.some(
+          (p: any) =>
+            p.type === "tool-generateArchitecture" && p.output?.isCompleted,
+        )
+        const summaryId = `summary-${messageId}`
+        if (alreadyDone && prevMessages.some((m) => m.id === summaryId)) {
+          return prevMessages
+        }
+
+        // Mark the tool output as completed + save summary for reload
         const updated = prevMessages.map((m) => {
           if (m.id !== messageId) return m
           return {
@@ -573,6 +644,7 @@ function ChatTab({
                   output: {
                     ...p.output,
                     isCompleted: true,
+                    summary,
                   },
                 }
               }
@@ -580,6 +652,19 @@ function ChatTab({
             }),
           }
         })
+
+        // Add a summary assistant message (once)
+        const summaryMsg = {
+          id: summaryId,
+          role: "assistant" as const,
+          content: summary,
+          parts: [{ type: "text" as const, text: summary }],
+          createdAt: new Date(),
+        }
+        if (!updated.some((m) => m.id === summaryId)) {
+          updated.push(summaryMsg)
+        }
+
         try {
           localStorage.setItem(
             `chat-${projectId}-${currentUserId}`,
@@ -587,18 +672,32 @@ function ChatTab({
           )
         } catch {}
 
-        const updatedMsg = updated.find((m) => m.id === messageId)
-        if (updatedMsg?.parts) {
+        // Persist isCompleted via PATCH (API has no batch POST)
+        const updatedParts = updated.find((m) => m.id === messageId)?.parts
+        if (updatedParts) {
           fetch("/api/ai/chat/messages", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               projectId,
               messageId,
-              parts: updatedMsg.parts,
+              parts: updatedParts,
             }),
           }).catch(() => {})
         }
+
+        // Persist summary as its own message
+        fetch("/api/ai/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: summaryId,
+            projectId,
+            role: "assistant",
+            content: summary,
+            parts: summaryMsg.parts,
+          }),
+        }).catch(() => {})
 
         return updated
       })
@@ -689,13 +788,10 @@ function ChatTab({
                   )
                   return rawMsg.parts?.map((part: any, i: number) => {
                     if (part.type === "text") {
-                      if (hasArchTool || hasActiveToolCall) {
-                        const toolPart = rawMsg.parts?.find(
-                          (p: any) => p.type === "tool-generateArchitecture"
-                        )
-                        const isCompleted = toolPart?.output?.isCompleted || completedArchitectTexts.has(message.id)
-                        if (!isCompleted) return null
-                      }
+                      // Never show text parts of messages that called generateArchitecture
+                      // — the LLM only says "On it." / "Generating now." which adds no value.
+                      // The real summary comes from the design agent as a separate message.
+                      if (hasArchTool) return null
                       return (
                         <div key={i} className="max-w-[85%]">
                           <div className="rounded-xl rounded-bl-md bg-white/[0.06] border border-white/[0.08] px-4 py-2.5 text-[13px] leading-relaxed text-foreground">
@@ -817,6 +913,14 @@ function ChatTab({
                             <ArchitectStatusCard
                               key={`run-${part.output.runId}`}
                               runId={part.output.runId}
+                              isCompleted={
+                                !!part.output?.isCompleted ||
+                                completedArchitectTexts.has(message.id)
+                              }
+                              onComplete={(run) =>
+                                handleArchitectComplete(message.id, run)
+                              }
+                              previousCanvasJson={part.output?.previousCanvasJson}
                             />
                           ) : null
                         case "output-error":

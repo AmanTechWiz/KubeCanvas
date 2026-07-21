@@ -71,6 +71,12 @@ export const ArchitectureEdgeSchema = z.object({
 });
 
 export const ArchitectureSchema = z.object({
+  direction: z
+    .enum(["TB", "LR", "BT", "RL"])
+    .optional()
+    .describe(
+      "LAYOUT DIRECTION. You MUST set this when the user mentions ANY direction preference. 'left to right'/'LR'/'horizontal' → 'LR'. 'right to left'/'RL' → 'RL'. 'bottom to top'/'BT' → 'BT'. 'top to bottom'/'TB'/'vertical' → 'TB'. If no direction is mentioned, omit. Without this field, layout defaults to top-to-bottom.",
+    ),
   nodes: z
     .array(ArchitectureNodeSchema)
     .min(1)

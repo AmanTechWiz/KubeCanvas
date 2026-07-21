@@ -1,15 +1,66 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { tasks } from "@trigger.dev/sdk";
+import { Liveblocks } from "@liveblocks/node";
 import { prisma } from "@/lib/prisma";
 import { checkProjectAccess } from "@/lib/project-access";
 import type { designAgent } from "@/trigger/design-agent";
+
+const liveblocks = new Liveblocks({
+  secret: process.env.LIVEBLOCKS_SECRET_KEY!,
+});
+
+/**
+ * Reads the LIVE canvas from the Liveblocks room (not the debounced
+ * autosave in Postgres) so diffs and revert snapshots are never stale.
+ * Falls back to the persisted canvasJson if the room has no storage yet.
+ */
+async function readLiveCanvas(
+  roomId: string,
+  prismaFallback: any,
+): Promise<{ nodes: any[]; edges: any[] }> {
+  try {
+    const doc = (await liveblocks.getStorageDocument(roomId, "json")) as any;
+    const flow = doc?.flow;
+    if (flow && flow.nodes) {
+      const rawNodes = Object.values(flow.nodes) as any[];
+      const rawEdges = flow.edges ? (Object.values(flow.edges) as any[]) : [];
+      return {
+        nodes: rawNodes.map((n: any) => ({
+          id: n.id ?? "",
+          type: n.type ?? "canvasNode",
+          position: n.position ?? { x: 0, y: 0 },
+          width: n.width ?? null,
+          height: n.height ?? null,
+          data: n.data ?? {},
+        })),
+        edges: rawEdges.map((e: any) => ({
+          id: e.id ?? "",
+          type: e.type ?? "canvasEdge",
+          source: e.source ?? "",
+          target: e.target ?? "",
+          sourceHandle: e.sourceHandle ?? null,
+          targetHandle: e.targetHandle ?? null,
+          label: e.label ?? null,
+          data: e.data ?? {},
+        })),
+      };
+    }
+  } catch (err) {
+    console.warn("[AI Design] Live storage read failed, using DB fallback:", err);
+  }
+
+  const rawNodes = Array.isArray(prismaFallback?.nodes) ? prismaFallback.nodes : [];
+  const rawEdges = Array.isArray(prismaFallback?.edges) ? prismaFallback.edges : [];
+  return { nodes: rawNodes, edges: rawEdges };
+}
 
 /**
  * POST — Trigger a background design generation task.
  *
  * Accepts: { prompt: string, projectId: string }
- * Reads current canvas state from DB and passes it to the agent for diff-based modification.
+ * Reads live canvas state from the Liveblocks room (DB fallback) and
+ * passes it to the agent for diff-based modification + revert snapshot.
  */
 export async function POST(request: Request) {
   const { userId } = await auth();
@@ -49,12 +100,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Read current canvas state for diff-based modification
-  const canvasJson = project.canvasJson as any;
-  const rawNodes = Array.isArray(canvasJson?.nodes) ? canvasJson.nodes : [];
-  const rawEdges = Array.isArray(canvasJson?.edges) ? canvasJson.edges : [];
+  // Read current canvas state — live from the Liveblocks room so
+  // diff-based modification and the revert snapshot are never stale
+  // (the DB canvasJson lags behind by the autosave debounce).
+  const canvasJson = await readLiveCanvas(projectId, project.canvasJson);
 
-  const currentNodes = rawNodes.map((n: any) => ({
+  const currentNodes = canvasJson.nodes.map((n: any) => ({
     id: n.id ?? "",
     label: n.data?.label ?? n.label ?? "",
     shape: n.data?.shape ?? "rectangle",
@@ -62,7 +113,7 @@ export async function POST(request: Request) {
     logo: n.data?.logo ?? null,
   }));
 
-  const currentEdges = rawEdges.map((e: any) => ({
+  const currentEdges = canvasJson.edges.map((e: any) => ({
     id: e.id ?? "",
     source: e.source ?? "",
     target: e.target ?? "",

@@ -14,10 +14,7 @@ import {
   RoomProvider,
   ClientSideSuspense,
   useMutation,
-  useUndo,
-  useRedo,
-  useCanUndo,
-  useCanRedo,
+  useHistory,
   useUpdateMyPresence,
 } from "@liveblocks/react"
 
@@ -50,10 +47,12 @@ import { LiveCursors } from "@/components/editor/live-cursors"
 import { AgentCursor } from "@/components/editor/agent-cursor"
 
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import { useCanvasHistory } from "@/hooks/use-canvas-history"
 import { useAutosave, type SaveStatus } from "@/hooks/use-autosave"
 import { DEFAULT_NODE_COLOR, NODE_COLORS } from "@/types/canvas"
 import { parseShapeDrag, parseTextDrag, SHAPES } from "@/lib/canvas-shapes"
 import { parseLogoDragToCanvas, logoShapeForIcon } from "@/lib/logo-data"
+import { cleanupCanvasLayout } from "@/lib/canvas-cleanup"
 
 import type { CanvasTemplate } from "@/components/editor/starter-templates"
 
@@ -236,6 +235,7 @@ function FlowCanvas({
   )
 
   // One-shot cleanup: remove any broken nodes from Liveblocks storage
+  const lbHistory = useHistory()
   const cleanupRan = useRef(false)
   const cleanupMutation = useMutation(({ storage }) => {
     const flow = storage.get("flow")
@@ -317,9 +317,10 @@ function FlowCanvas({
   useEffect(() => {
     if (!cleanupRan.current) {
       cleanupRan.current = true
-      cleanupMutation()
+      // System housekeeping — not a user edit, keep it off undo history
+      lbHistory.disable(() => cleanupMutation())
     }
-  }, [cleanupMutation])
+  }, [cleanupMutation, lbHistory])
 
   // ── Node creation mutation ────────────────────────────────────────
   const addNodeMutation = useMutation(
@@ -451,6 +452,13 @@ function FlowCanvas({
   // ── Canvas state loader ──────────────────────────────────────────
   const [canvasLoaded, setCanvasLoaded] = useState(false)
 
+  // ── Universal undo/redo (snapshot history for human + AI edits) ──
+  const canvasHistory = useCanvasHistory({
+    nodes: nodes ?? [],
+    edges: edges ?? [],
+    ready: canvasLoaded,
+  })
+
   // ── Migrate old edge handle IDs ──────────────────────────────────
   // Edges should use bare position IDs (e.g. "right", "left", "top", "bottom").
   // Older versions may have had type-suffixed IDs ("right-source") or
@@ -494,9 +502,14 @@ function FlowCanvas({
   useEffect(() => {
     if (canvasLoaded && !edgeMigrationRan.current) {
       edgeMigrationRan.current = true
-      migrateEdgeHandles()
+      // System housekeeping — not a user edit, keep it off undo history
+      lbHistory.disable(() => migrateEdgeHandles())
+      // Adopt the migrated state as the history baseline silently.
+      // Must beat the history engine's 800ms capture debounce and give
+      // the storage notification time to land, hence 500ms.
+      setTimeout(() => canvasHistory.rebase(), 500)
     }
-  }, [canvasLoaded, migrateEdgeHandles])
+  }, [canvasLoaded, migrateEdgeHandles, lbHistory, canvasHistory])
 
   // ── External drag-drop handlers on wrapper div ────────────────────
   // ReactFlow v12 uses pointer events internally and does not consume
@@ -836,7 +849,7 @@ function FlowCanvas({
         >
           <LiveCursors currentUserId={currentUserId} viewport={viewport} />
           <AgentCursor />
-          <ReactFlowControls />
+          <ReactFlowControls history={canvasHistory} />
           <TemplateImporter
             pendingTemplate={pendingTemplate}
             onTemplateImported={onTemplateImported}
@@ -854,12 +867,13 @@ function FlowCanvas({
 }
 
 // ── Canvas controls that must live inside <ReactFlow> (needs the provider context) ──
-function ReactFlowControls() {
+function ReactFlowControls({
+  history,
+}: {
+  history: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean }
+}) {
   const reactFlowInstance = useReactFlow()
-  const undo = useUndo()
-  const redo = useRedo()
-  const canUndo = useCanUndo()
-  const canRedo = useCanRedo()
+  const { undo, redo, canUndo, canRedo } = history
 
   const deleteNodesMutation = useMutation(({ storage }, nodeIds: string[]) => {
     try {
@@ -910,6 +924,95 @@ function ReactFlowControls() {
     if (selectedEdges.length > 0) deleteEdgesMutation(selectedEdges.map((e) => e.id))
   }, [reactFlowInstance, deleteNodesMutation, deleteEdgesMutation])
 
+  // ── Cleanup layout mutation ───────────────────────────────────────
+  const cleanupMutation = useMutation(({ storage }) => {
+    try {
+      const flow = storage.get("flow")
+      if (!flow) return
+      const nodesMap = flow.get("nodes")
+      const edgesMap = flow.get("edges")
+      if (!nodesMap || !edgesMap) return
+
+      // Collect node data (id, position, dimensions)
+      const nodeData: Array<{
+        id: string
+        position: { x: number; y: number }
+        width: number
+        height: number
+      }> = []
+      nodesMap.forEach((node: any) => {
+        const pos = node.get("position")
+        const w = node.get("width")
+        const h = node.get("height")
+        if (pos && typeof w === "number" && typeof h === "number") {
+          nodeData.push({
+            id: node.get("id"),
+            position: { x: pos.x, y: pos.y },
+            width: w,
+            height: h,
+          })
+        }
+      })
+
+      // Collect edge data (id, source, target, handles)
+      const edgeData: Array<{
+        id: string
+        source: string
+        target: string
+        sourceHandle?: string | null
+        targetHandle?: string | null
+      }> = []
+      edgesMap.forEach((edge: any) => {
+        edgeData.push({
+          id: edge.get("id"),
+          source: edge.get("source"),
+          target: edge.get("target"),
+          sourceHandle: edge.get("sourceHandle"),
+          targetHandle: edge.get("targetHandle"),
+        })
+      })
+
+      // Run dagre cleanup — detects direction from existing positions
+      const result = cleanupCanvasLayout(nodeData, edgeData)
+
+      console.log(
+        `[Cleanup] Layout direction: ${result.direction}, ` +
+        `${nodeData.length} nodes, ${edgeData.length} edges`,
+      )
+
+      // Update node positions (rounded to avoid sub-pixel drift)
+      for (const n of nodeData) {
+        const newPos = result.positions.get(n.id)
+        if (!newPos) continue
+        const liveNode = nodesMap.get(n.id)
+        if (!liveNode) continue
+        liveNode.set("position", { x: Math.round(newPos.x), y: Math.round(newPos.y) })
+      }
+
+      // Update edge handles
+      for (const e of edgeData) {
+        const handles = result.edgeHandles.get(e.id)
+        if (!handles) continue
+        const liveEdge = edgesMap.get(e.id)
+        if (!liveEdge) continue
+        liveEdge.set("sourceHandle", handles.sourceHandle)
+        liveEdge.set("targetHandle", handles.targetHandle)
+      }
+
+      console.log(`[Cleanup] Done — offset-adjusted positions applied.`)
+    } catch (err) {
+      console.error("[ReactFlowControls] cleanup error:", err)
+    }
+  }, [])
+
+  const handleCleanup = useCallback(() => {
+    cleanupMutation()
+    // Fit view after a short delay to let Liveblocks propagate
+    setTimeout(() => {
+      reactFlowInstance?.fitView({ duration: 300, padding: 0.2 })
+    }, 100)
+  }, [cleanupMutation, reactFlowInstance])
+
   useKeyboardShortcuts({ reactFlowInstance, undo, redo, deleteSelected })
 
   return (
@@ -919,6 +1022,7 @@ function ReactFlowControls() {
       canRedo={canRedo}
       undo={undo}
       redo={redo}
+      onCleanup={handleCleanup}
     />
   )
 }
@@ -1017,6 +1121,7 @@ function CanvasLoader({
   onLoaded?: () => void
 }) {
   const loadedRef = useRef(false)
+  const lbHistory = useHistory()
 
   const loadMutation = useMutation(
     ({ storage }, canvasJson: { nodes: any[]; edges: any[] }) => {
@@ -1082,7 +1187,8 @@ function CanvasLoader({
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.canvasJson) {
-          loadMutation(data.canvasJson)
+          // Loading saved state is not a user edit — keep it off undo history
+          lbHistory.disable(() => loadMutation(data.canvasJson))
         }
       })
       .catch(() => {
@@ -1091,7 +1197,7 @@ function CanvasLoader({
       .finally(() => {
         onLoaded?.()
       })
-  }, [projectId, loadMutation, onLoaded])
+  }, [projectId, loadMutation, onLoaded, lbHistory])
 
   return null
 }

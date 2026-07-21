@@ -83,6 +83,8 @@ export async function POST(request: Request) {
             source: edge.source,
             target: edge.target,
             type: edge.type ?? "canvasEdge",
+            ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+            ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
             data: edge.data ?? {},
             ...(edge.label ? { label: edge.label } : {}),
           } as any);

@@ -1,6 +1,6 @@
 import { task, metadata, wait } from "@trigger.dev/sdk";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateObject } from "ai";
+import { generateObject, generateText } from "ai";
 import { Liveblocks } from "@liveblocks/node";
 import { mutateFlow } from "@liveblocks/react-flow/node";
 import {
@@ -42,6 +42,23 @@ const COLOR_MAP: Record<string, { bg: string; text: string }> = {
   teal: { bg: "#062822", text: "#0AC7B4" },
 };
 
+// ── Hex → Color Name Reverse Map ──────────────────────────────────
+// The canvas stores hex colors ("#1F1F1F") but the AI schema uses
+// color names ("neutral"). This map lets us normalize comparison so
+// existing nodes aren't falsely flagged as "updated" on every run.
+const HEX_TO_COLOR_NAME: Record<string, string> = {};
+for (const [name, val] of Object.entries(COLOR_MAP)) {
+  HEX_TO_COLOR_NAME[val.bg.toLowerCase()] = name;
+}
+
+function normalizeColor(color: string): string {
+  // If it's a known hex, return the color name
+  const lower = color.toLowerCase();
+  if (HEX_TO_COLOR_NAME[lower]) return HEX_TO_COLOR_NAME[lower];
+  // Already a name or unknown — return as-is
+  return color;
+}
+
 // ── Valid Logo Set & ID-to-Name Resolution ─────────────────────────
 // Pre-built from LOGO_CATEGORIES so we can strip invalid logos
 // returned by the LLM before they reach the canvas, and resolve
@@ -77,6 +94,82 @@ function stripInvalidLogos(arch: Architecture): Architecture {
   };
 }
 
+// ── Natural Summary Generator ──────────────────────────────────────
+//
+// Instead of building summaries with template strings (which sound robotic),
+// we use a fast LLM call to generate ONE natural sentence describing what
+// happened — the way a colleague would explain their work.
+
+const SUMMARY_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+
+async function generateNaturalSummary(
+  userPrompt: string,
+  info: {
+    mode: "modification" | "fresh";
+    added?: string[];
+    removed?: string[];
+    renamed?: Array<{ from: string; to: string }>;
+    updatedCount?: number;
+    mainComponents?: string[];
+  },
+): Promise<string> {
+  // Build a compact JSON description of what changed
+  const changeDesc: Record<string, any> = { mode: info.mode };
+  if (info.added && info.added.length > 0) changeDesc.added = info.added.slice(0, 8);
+  if (info.removed && info.removed.length > 0) changeDesc.removed = info.removed.slice(0, 5);
+  if (info.renamed && info.renamed.length > 0) changeDesc.renamed = info.renamed;
+  if (info.updatedCount && info.updatedCount > 0) changeDesc.updated = info.updatedCount;
+  if (info.mainComponents && info.mainComponents.length > 0) changeDesc.components = info.mainComponents.slice(0, 8);
+
+  try {
+    const { text } = await generateText({
+      model: googleProvider(SUMMARY_MODEL),
+      system: `You are a senior software architect summarising changes to a system diagram for a colleague.
+
+Rules:
+- ONE sentence only, max 25 words.
+- Be conversational and natural — like telling a teammate what you just did.
+- If they asked for something specific, confirm it was done. Never list component names — group them.
+- Never mention IDs, shapes, colors, logos, or edges. Never talk about "components" or "nodes".
+- Examples of good summaries:
+  • "Added a Redis cache between the gateway and services."
+  • "Swapped PostgreSQL for DynamoDB and added a read replica."
+  • "Designed a microservices architecture with an event bus and service mesh."
+  • "Removed the old queue worker and connected the new one to RabbitMQ."
+- No greetings, no markdown, no bullet points. Just the sentence.`,
+      prompt: `The user asked: ${userPrompt}
+
+Changes: ${JSON.stringify(changeDesc)}`,
+      temperature: 0.4,
+    });
+    const trimmed = text.trim().replace(/^["']|["']$/g, "");
+    return trimmed || fallbackSummary(info, userPrompt);
+  } catch (err) {
+    console.warn("[Design Agent] Summary LLM failed, using fallback:", err);
+    return fallbackSummary(info, userPrompt);
+  }
+}
+
+function fallbackSummary(
+  info: {
+    mode: "modification" | "fresh";
+    added?: string[];
+    removed?: string[];
+    renamed?: Array<{ from: string; to: string }>;
+    updatedCount?: number;
+    mainComponents?: string[];
+  },
+  userPrompt: string,
+): string {
+  // Minimal fallback — last resort if LLM call fails
+  const added = info.added?.length ?? 0;
+  const removed = info.removed?.length ?? 0;
+  if (added > 0 && removed > 0) return `Added ${added} new component${added > 1 ? "s" : ""} and removed ${removed}.`;
+  if (added > 0) return `Added ${added} new component${added > 1 ? "s" : ""}.`;
+  if (removed > 0) return `Removed ${removed} component${removed > 1 ? "s" : ""}.`;
+  return "Done.";
+}
+
 // ── Prompts ─────────────────────────────────────────────────────────
 
 const FRESH_PROMPT = `You are a senior software architect designing a production system.
@@ -95,6 +188,13 @@ OUTPUT RULES:
 - Do NOT over-engineer simple requests. A blog doesn't need Kafka and Elasticsearch.
 - Do NOT under-engineer complex requests. A production e-commerce platform needs proper infrastructure.
 - NEVER output coordinates, sizes, or handle positions — the layout engine computes those.
+- **LAYOUT DIRECTION (MANDATORY WHEN REQUESTED)**: Your JSON output has an optional **direction** field. You MUST include it when the user mentions ANY layout direction:
+  - "left to right"/"LR"/"horizontal"/"flow horizontally" → include **"direction": "LR"** in your output
+  - "right to left"/"RL" → include **"direction": "RL"**
+  - "bottom to top"/"BT" → include **"direction": "BT"**
+  - "top to bottom"/"TB"/"vertical" → include **"direction": "TB"**
+  - No direction mentioned → omit the field
+  The **direction** field controls node arrangement. Omitting it when the user wants LR means nodes will be laid out top-to-bottom — which is WRONG.
 
 NAMING: Avoid "Service A", "Backend Service". Prefer "Payment Orchestrator", "Fraud Engine", "Feed Generator".
 
@@ -116,6 +216,7 @@ RULES FOR MODIFICATION:
 - When the user says "change X to Y", update that component's properties.
 - Use the same IDs as the existing components when preserving them.
 - New component IDs should follow the same kebab-case convention.
+- **CRITICAL — NEVER change existing node properties unless the user explicitly asks.** If a node already exists on the canvas with a certain label, logo, color, and shape — you MUST output those exact same values for that node's ID. Do NOT "improve" labels by adding technology names (e.g. changing "Orders" to "PostgreSQL Orders"), do NOT add logos where there were none, do NOT change colors or shapes. Only new node IDs can have new properties.
 
 OUTPUT RULES:
 - Output the full architecture as a single JSON object matching the schema.
@@ -127,6 +228,13 @@ OUTPUT RULES:
 - For well-known technologies, set the logo field. Set to null for generic components.
 - If you don't know whether a brand has an icon, set logo to null. NEVER guess or make up icon names — invalid names crash the UI.
 - NEVER output coordinates, sizes, or handle positions.
+- **LAYOUT DIRECTION (MANDATORY WHEN REQUESTED)**: Your JSON output has an optional **direction** field. You MUST include it when the user mentions ANY layout direction:
+  - "left to right"/"LR"/"horizontal" → include **"direction": "LR"** in your output
+  - "right to left"/"RL" → include **"direction": "RL"**
+  - "bottom to top"/"BT" → include **"direction": "BT"**
+  - "top to bottom"/"TB"/"vertical" → include **"direction": "TB"**
+  - No direction mentioned → omit the field
+  Without this field, the layout defaults to top-to-bottom. If the user asks for LR and you omit it, the diagram will be wrong.
 
 NEVER output code, scripts, configuration, or terraform.`;
 
@@ -167,7 +275,8 @@ function computeDiff(
     const changes: Partial<ArchitectureNode> = {};
     if (currentNode.label !== targetNode.label) changes.label = targetNode.label;
     if (currentNode.shape !== targetNode.shape) changes.shape = targetNode.shape;
-    if (currentNode.color !== targetNode.color) changes.color = targetNode.color;
+    // Normalize color before comparing — canvas stores hex, AI outputs names
+    if (normalizeColor(currentNode.color) !== normalizeColor(targetNode.color)) changes.color = targetNode.color;
     if (currentNode.logo !== targetNode.logo) changes.logo = targetNode.logo;
 
     if (Object.keys(changes).length > 0) {
@@ -282,7 +391,7 @@ export const designAgent = task({
         : FRESH_PROMPT;
 
       const userMessage = isModification
-        ? `The user wants to: ${prompt}\n\nOutput the COMPLETE target architecture (all nodes and edges that should exist after the change). Preserve existing components unless asked to remove them.`
+        ? `The user wants to: ${prompt}\n\nOutput the COMPLETE target architecture (all nodes and edges that should exist after the change). Preserve existing components unless asked to remove them. CRITICAL: For any existing node that keeps the same ID, you MUST output its EXACT existing label, logo, color, and shape. Never "improve" labels or add logos to existing nodes.`
         : prompt;
 
       const result = await generateObject({
@@ -327,7 +436,24 @@ export const designAgent = task({
     }
 
     // ── 4. Layout with dagre ──────────────────────────────────────
-    const { nodes: layoutNodes, edges: layoutEdges } = layoutArchitecture(architecture);
+    //
+    // For modifications, read existing node positions from the canvas
+    // so we don't overwrite the user's manual placement — only new
+    // nodes get dagre-computed positions.
+    //
+    let existingPositions: Map<string, { x: number; y: number }> | undefined;
+    if (isModification) {
+      existingPositions = new Map();
+      await mutateFlow({ client: liveblocks, roomId }, (flow) => {
+        for (const node of flow.nodes) {
+          existingPositions!.set(node.id, {
+            x: node.position.x,
+            y: node.position.y,
+          });
+        }
+      });
+    }
+    const { nodes: layoutNodes, edges: layoutEdges } = layoutArchitecture(architecture, existingPositions);
     console.log(
       `[Design Agent] Layout complete: ${layoutNodes.length} positioned nodes, ${layoutEdges.length} edges`,
     );
@@ -366,22 +492,25 @@ export const designAgent = task({
       });
     }
 
+    let summary = "";
     try {
+      let diff: ArchitectureDiff | undefined;
       if (isModification) {
       // Diff-based: only apply changes
-      const diff = computeDiff(currentArchitecture!, architecture);
-      logDiff(diff);
+      const d = computeDiff(currentArchitecture!, architecture);
+      diff = d;
+      logDiff(d);
 
       // ── Batch removals (no animation needed for vanishing items) ──
-      if (diff.removeNodeIds.length > 0 || diff.removeEdgeIds.length > 0) {
+      if (d.removeNodeIds.length > 0 || d.removeEdgeIds.length > 0) {
         await mutateFlow({ client: liveblocks, roomId }, (flow) => {
-          for (const id of diff.removeEdgeIds) flow.removeEdge(id);
-          for (const id of diff.removeNodeIds) flow.removeNode(id);
+          for (const id of d.removeEdgeIds) flow.removeEdge(id);
+          for (const id of d.removeNodeIds) flow.removeNode(id);
         });
       }
 
       // ── Animate new nodes one by one ─────────────────────────────
-      for (const node of diff.addNodes) {
+      for (const node of d.addNodes) {
         const layoutNode = layoutNodes.find((n) => n.id === node.id);
         if (layoutNode) {
           await moveCursor(layoutNode.position.x, layoutNode.position.y);
@@ -408,7 +537,7 @@ export const designAgent = task({
       }
 
       // ── Animate new edges one by one ─────────────────────────────
-      for (const edge of diff.addEdges) {
+      for (const edge of d.addEdges) {
         const layoutEdge = layoutEdges.find((e) => e.id === edge.id);
         // Move cursor to midpoint between source and target
         const srcLayout = layoutNodes.find((n) => n.id === edge.source);
@@ -437,25 +566,24 @@ export const designAgent = task({
       }
 
       // ── Batch node updates ───────────────────────────────────────
-      if (diff.updateNodes.length > 0) {
+      if (d.updateNodes.length > 0) {
         // Move cursor to center of all updated nodes
-        if (diff.updateNodes.length > 0) {
+        if (d.updateNodes.length > 0) {
           const avgX =
-            diff.updateNodes.reduce((sum, u) => {
+            d.updateNodes.reduce((sum, u) => {
               const ln = layoutNodes.find((n) => n.id === u.id);
               return sum + (ln?.position.x ?? 0);
-            }, 0) / diff.updateNodes.length;
+            }, 0) / d.updateNodes.length;
           const avgY =
-            diff.updateNodes.reduce((sum, u) => {
+            d.updateNodes.reduce((sum, u) => {
               const ln = layoutNodes.find((n) => n.id === u.id);
               return sum + (ln?.position.y ?? 0);
-            }, 0) / diff.updateNodes.length;
+            }, 0) / d.updateNodes.length;
           await moveCursor(avgX, avgY);
           await wait.for({ seconds: ANIM_DELAY });
         }
         await mutateFlow({ client: liveblocks, roomId }, (flow) => {
-          for (const { id, changes } of diff.updateNodes) {
-            const layoutNode = layoutNodes.find((n) => n.id === id);
+          for (const { id, changes } of d.updateNodes) {
             const nodeData: Record<string, unknown> = {};
             if (changes.label !== undefined) nodeData.label = changes.label;
             if (changes.color !== undefined) {
@@ -468,17 +596,16 @@ export const designAgent = task({
             if (Object.keys(nodeData).length > 0) {
               flow.updateNodeData(id, nodeData as any);
             }
-            if (layoutNode?.position) {
-              flow.updateNode(id, { position: layoutNode.position } as any);
-            }
+            // NOTE: position is NOT updated for existing nodes —
+            // dagre re-layout would overwrite the user's manual placement.
           }
         });
       }
 
       // ── Batch edge updates ───────────────────────────────────────
-      if (diff.updateEdges.length > 0) {
+      if (d.updateEdges.length > 0) {
         await mutateFlow({ client: liveblocks, roomId }, (flow) => {
-          for (const { id, changes } of diff.updateEdges) {
+          for (const { id, changes } of d.updateEdges) {
             const layoutEdge = layoutEdges.find((e) => e.id === id);
             const edgeData: Record<string, unknown> = {};
             if (changes.label !== undefined) edgeData.label = changes.label;
@@ -488,6 +615,34 @@ export const designAgent = task({
               flow.updateEdge(id, edgeData as any);
             }
           }
+        });
+      }
+
+      // ── Build modification summary with LLM ──────────────────────
+      {
+        const addedLabels = d.addNodes.map((n) => n.label);
+        const removedLabels = d.removeNodeIds
+          .map((id) => currentArchitecture?.nodes.find((n) => n.id === id)?.label)
+          .filter(Boolean) as string[];
+
+        const renamed: Array<{ from: string; to: string }> = [];
+        let updatedCount = 0;
+        for (const u of d.updateNodes) {
+          const oldLabel = currentArchitecture?.nodes.find((n) => n.id === u.id)?.label;
+          const newLabel = u.changes.label;
+          if (newLabel !== undefined && oldLabel !== undefined && newLabel !== oldLabel) {
+            renamed.push({ from: oldLabel, to: newLabel });
+          } else if (oldLabel && Object.keys(u.changes).length > 0) {
+            updatedCount++;
+          }
+        }
+
+        summary = await generateNaturalSummary(prompt, {
+          mode: "modification",
+          added: addedLabels,
+          removed: removedLabels,
+          renamed,
+          updatedCount,
         });
       }
     } else {
@@ -560,11 +715,22 @@ export const designAgent = task({
 
     metadata.set("phase", "complete");
 
+    // ── Build fresh summary with LLM ───────────────────────────────
+    // (only reached when !isModification, so summary is still empty)
+    if (!summary) {
+      const nodeNames = layoutNodes.map((n) => n.data.label);
+      summary = await generateNaturalSummary(prompt, {
+        mode: "fresh",
+        mainComponents: nodeNames,
+      });
+    }
+
     return {
       status: "completed",
       nodesCount: layoutNodes.length,
       edgesCount: layoutEdges.length,
       mode: isModification ? "modification" : "fresh",
+      summary,
     };
   },
 });

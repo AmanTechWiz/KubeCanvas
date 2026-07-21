@@ -189,7 +189,7 @@ export async function POST(request: Request) {
             console.log("[AI Chat] Prompt:", prompt.slice(0, 200));
 
             // Return a confirmation request instead of executing immediately.
-            // The client shows a yes/no confirmation card warning that changes cannot be undone.
+            // The client shows a yes/no confirmation card before modifying the canvas.
             // On confirm, the client calls POST /api/ai/design to actually trigger the agent.
             return {
               requiresConfirmation: true,

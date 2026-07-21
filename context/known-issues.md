@@ -1,3 +1,3 @@
 ## Current issue :
 
-_(No known issues — all items resolved.)_
+_(none)_

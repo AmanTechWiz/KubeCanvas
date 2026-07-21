@@ -55,6 +55,17 @@ function RedoIcon() {
   )
 }
 
+function CleanLayoutIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  )
+}
+
 // ── Control button ────────────────────────────────────────────────
 
 function ControlButton({
@@ -94,6 +105,7 @@ interface CanvasControlsProps {
   canRedo: boolean
   undo: () => void
   redo: () => void
+  onCleanup?: () => void
 }
 
 function CanvasControlsInner({
@@ -102,6 +114,7 @@ function CanvasControlsInner({
   canRedo,
   undo,
   redo,
+  onCleanup,
 }: CanvasControlsProps) {
   return (
     <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[61]">
@@ -145,6 +158,16 @@ function CanvasControlsInner({
           title="Redo (⌘⇧Z)"
         >
           <RedoIcon />
+        </ControlButton>
+
+        <Divider />
+
+        {/* ── Cleanup layout ──────────────────────────────────── */}
+        <ControlButton
+          onClick={() => onCleanup?.()}
+          title="Clean up layout"
+        >
+          <CleanLayoutIcon />
         </ControlButton>
       </div>
     </div>
