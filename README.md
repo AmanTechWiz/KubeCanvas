@@ -35,9 +35,39 @@ Next.js 16 · TypeScript · Tailwind v4 · shadcn/ui · Liveblocks · React Flow
 
 ## Getting Started
 
+### Prerequisites
+
+- [Bun](https://bun.sh) (package manager)
+- [PostgreSQL](https://www.postgresql.org) database
+- [Clerk](https://clerk.com) account (auth)
+- [Liveblocks](https://liveblocks.io) account (real-time collaboration)
+- [Trigger.dev](https://trigger.dev) account (background AI tasks)
+- [Google AI](https://ai.google.dev) API key (Gemini for architecture generation)
+
+### Setup
+
 ```bash
+# Install dependencies
 bun install
+
+# Set up the database
+cp .env.example .env.local   # fill in your keys
+bunx prisma generate
+bunx prisma migrate dev
+
+# Start the dev server
 bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+### Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string (Prisma) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk auth (public) |
+| `CLERK_SECRET_KEY` | Clerk auth (server) |
+| `LIVEBLOCKS_SECRET_KEY` | Liveblocks real-time collaboration |
+| `TRIGGER_SECRET_KEY` | Trigger.dev background tasks |
+| `GOOGLE_AI__API_KEY` | Gemini 2.0 Flash for AI generation |
+
+Open [http://localhost:3000](http://localhost:3000) to see the app.
