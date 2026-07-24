@@ -6,6 +6,7 @@ import { Bot, X, Send, Loader2, Trash2, Download, FileText,  FolderOpen, Check, 
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SpiralSpinner } from "@/components/ui/spiral-spinner"
+import { ProgressiveBlur } from "@/components/ui/progressive-blur"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import { useRealtimeRun } from "@trigger.dev/react-hooks"
@@ -718,14 +719,12 @@ function ChatTab({
   return (
     <div className="flex h-full flex-col">
       {/* Chat messages */}
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-3 space-y-3"
-        style={{
-          maskImage: "linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)",
-          WebkitMaskImage: "linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)",
-        }}
-      >
+      <div className="relative flex-1 overflow-hidden">
+        <ProgressiveBlur position="top" height="60px" />
+        <div
+          ref={scrollRef}
+          className="h-full overflow-y-auto p-3 space-y-3"
+        >
         {messages.length === 0 && (
           <div className="flex h-full w-full items-center justify-center px-6">
             <div className="mx-auto flex w-full max-w-[420px] flex-col items-center justify-center gap-4 text-center">
@@ -946,9 +945,9 @@ function ChatTab({
             <span className="text-[12px] text-muted-foreground/70">Thinking...</span>
           </div>
         )}
+        <ProgressiveBlur position="bottom" height="60px" />
+        </div>
       </div>
-
-      {/* Input area */}
       <div className="shrink-0 border-t border-white/[0.06] p-3">
         <form
           onSubmit={(e) => {
