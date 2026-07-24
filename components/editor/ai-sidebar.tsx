@@ -730,7 +730,7 @@ function ChatTab({
           <div className="flex h-full w-full items-center justify-center px-6">
             <div className="mx-auto flex w-full max-w-[420px] flex-col items-center justify-center gap-4 text-center">
               <div className="flex size-14 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04]">
-                <Bot className="size-7 text-[var(--accent-primary)]/80" />
+                <Bot className="size-7 text-white/80" />
               </div>
               <div className="w-full">
                 <p className="text-base font-normal tracking-[-0.02em] text-foreground">
@@ -1819,12 +1819,12 @@ export function AiSidebar({
             onClick={() => setConfirmOpen(false)}
           >
             <div
-              className="mx-4 w-full max-w-sm rounded-xl border border-white/[0.08] bg-[#111114] p-5"
+              className="mx-4 w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#111114] p-6"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex size-9 items-center justify-center rounded-full bg-[var(--state-error)]/10">
-                  <Trash2 className="size-4 text-[var(--state-error)]" />
+              <div className="flex items-center gap-4 mb-5">
+                <div className="flex size-12 items-center justify-center rounded-full bg-[var(--state-error)]/10">
+                  <Trash2 className="size-5 text-[var(--state-error)]" />
                 </div>
                 <div>
                   <p className="text-sm font-normal tracking-[-0.01em] text-foreground">

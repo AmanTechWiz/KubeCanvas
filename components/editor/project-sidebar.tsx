@@ -48,7 +48,7 @@ function ProjectItem({
   return (
     <div className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isActive ? "bg-accent-dim" : "hover:bg-muted/50"}`}>
       <div className="flex flex-1 items-center gap-2 cursor-pointer min-w-0" onClick={onNavigate}>
-        <FolderOpen className={`h-4 w-4 shrink-0 ${isActive ? "text-brand" : "text-muted-foreground"}`} />
+        <FolderOpen className={`h-4 w-4 shrink-0 ${isActive ? "text-white" : "text-muted-foreground"}`} />
         <span className={`flex-1 truncate ${isActive ? "text-foreground font-medium" : "text-foreground"}`}>{project.name}</span>
       </div>
       {isOwner && (
