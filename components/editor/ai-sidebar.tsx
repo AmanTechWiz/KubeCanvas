@@ -719,7 +719,7 @@ function ChatTab({
   return (
     <div className="flex h-full flex-col">
       {/* Chat messages */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden bg-[var(--bg-surface)]">
         <ProgressiveBlur position="top" height="60px" />
         <div
           ref={scrollRef}
