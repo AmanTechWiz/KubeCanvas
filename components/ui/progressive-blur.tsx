@@ -1,5 +1,7 @@
 "use client"
 
+import React from "react"
+
 import { cn } from "@/lib/utils"
 
 export interface ProgressiveBlurProps {
@@ -7,6 +9,7 @@ export interface ProgressiveBlurProps {
   height?: string
   position?: "top" | "bottom" | "both"
   blurLevels?: number[]
+  children?: React.ReactNode
 }
 
 export function ProgressiveBlur({
@@ -14,6 +17,7 @@ export function ProgressiveBlur({
   height = "30%",
   position = "bottom",
   blurLevels = [0.5, 1, 2, 4, 8, 16, 32, 64],
+  children,
 }: ProgressiveBlurProps) {
   // Create array with length equal to blurLevels.length - 2 (for before/after pseudo elements)
   const divElements = Array(blurLevels.length - 2).fill(null)
@@ -105,6 +109,8 @@ export function ProgressiveBlur({
                 : `linear-gradient(rgba(0,0,0,0) 0%, rgba(0,0,0,1) 5%, rgba(0,0,0,1) 95%, rgba(0,0,0,0) 100%)`,
         }}
       />
+
+      {children}
     </div>
   )
 }

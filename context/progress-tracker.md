@@ -94,6 +94,7 @@ _(No pending items.)_
 
 ## Recently Completed
 
+- feature [63] — Landing page migration from demo: rebuilt landing page with new design — added `background-pattern.tsx` (grid background), `bento-grid.tsx` (2x2 feature cards with animated cursors), `cta-section.tsx` (bottom CTA), `footer.tsx`, `blur-text.tsx` (animated text reveal), `shimmer-button.tsx` + `.css` (shimmer effect), `underline.tsx` (animated underline), `border-glow.tsx` + `.css` (renamed from BorderGlow); replaced `hero-dithering-card.tsx` (BlurText, ShimmerButton, Underline, intersection observer), `header-2.tsx` (simplified, no NeonButton), `button.tsx` (cursor-pointer), `progressive-blur.tsx` (accepts children); removed unused `BorderGlow.tsx`, `BorderGlow.css`, `neon-button.tsx`, `radial-glow-button.tsx`, `header-1.tsx`, `header-1.demo.tsx`; restored sign-in/sign-up toggle link in auth modal; reverted proxy.ts demo route; `demo/` folder preserved untouched; TypeScript clean, build passes
 - feature [62] — Build hardening & TypeScript compliance: fixed `maxTokens` incompatibility with AI SDK v7 in `generateText()` options; all three target files (`design-agent.ts`, `canvas-cleanup.ts`, `canvas-editor.tsx`) compile with zero errors; full `bun run build` passes clean
 - feature [61] — Natural LLM-generated summaries for AI modifications: `generateNaturalSummary()` in `design-agent.ts` calls `generateText` with Gemini for a one-sentence conversational summary of AI architecture changes; system prompt enforces "ONE sentence only, max 25 words. Be conversational and natural."; fallback to count-based summary on LLM failure (e.g. "Updated 5 components, added Redis layer"); replaces the old robotic template that dumped all node names with a human-sounding message
 - feature [60] — Canvas cleanup with dagre layout engine: created `lib/canvas-cleanup.ts` with `cleanupCanvasLayout()` utility; direction detection uses edge handle orientation (3x weight) + position deltas (1x weight) for stable vote; spacing scales with graph size (4 tiers from 1–6 to 20+ nodes); positions auto-offset to (60,60) so no nodes bleed off-canvas; handle computation is direction-aware (TB→bottom/top, LR→right/left, BT, RL); `CleanLayoutIcon` button added to canvas controls toolbar; `fitView({ duration: 300, padding: 0.2 })` triggers after cleanup so the layout is immediately visible
@@ -135,6 +136,13 @@ _(No pending items.)_
 - Auth pages use inline `style` props with CSS variables instead of Tailwind color utilities (Tailwind v4 semantic classes like `bg-background`, `text-foreground` do not resolve visually)
 - Do NOT import from `@clerk/ui` in application code — it triggers Clerk's bundled UI portal mode which covers the custom layout
 - Landing page follows xAI design language: single dark canvas, white outline pills, mono uppercase eyebrows, weight-400 display type with negative tracking, no shadows (hairline borders only)
+- Landing page hero uses `@paper-design/shaders-react` Dithering component (white-on-black, 20% opacity) inside a rounded card; `BlurText` for animated text reveal; `ShimmerButton` + `Underline` for "Get started" CTA
+- Feature section uses `BentoGrid` (2x2 layout with animated cursors and live avatars) inside `BorderGlow` cards with intersection-observer-driven reveal
+- Bottom CTA section with dot-pattern background and "Get started" button
+- Footer with logo, brand credit, and copyright
+- `GridBackground` adds subtle grid pattern across the page
+- `ProgressiveBlur` at viewport bottom hides near page bottom; "Explore more" button below hero scrolls to features
+- Header simplified: ghost `Button` for Features, `MenuToggleIcon` for mobile, no NeonButton dependency
 - Auth is handled inline on the landing page via modal overlay — no separate sign-in/sign-up routes
 - Clerk components use `routing="hash"` for in-modal authentication without page navigation
 - Liveblocks uses access token authentication (`prepareSession` + `session.allow` + `session.authorize`) — NOT `identifyUser()` which requires the external Permissions API
