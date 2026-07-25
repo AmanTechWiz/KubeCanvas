@@ -23,7 +23,13 @@ export const metadata: Metadata = {
   title: "KubeCanvas",
   description: "Real-time collaborative system design workspace",
   icons: {
-    icon: "/icon.png",
+    icon: [
+      { url: "/icon.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon.png", sizes: "16x16", type: "image/png" },
+      { url: "/icon.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon.png", sizes: "64x64", type: "image/png" },
+    ],
+    apple: "/icon.png",
   },
 };
 
