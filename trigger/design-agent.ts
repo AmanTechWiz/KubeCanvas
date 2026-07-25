@@ -25,7 +25,7 @@ function getLiveblocks() {
 
 function getGeminiModel() {
   const provider = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_AI__API_KEY! });
-  return provider(process.env.GEMINI_MODEL || "gemini-2.0-flash");
+  return provider(process.env.GEMINI_MODEL || "gemini-3.6-flash-lite");
 }
 
 // ── Color Map ───────────────────────────────────────────────────────
@@ -645,7 +645,7 @@ export const designAgent = task({
           removed: removedLabels,
           renamed,
           updatedCount,
-        }, geminiModel);
+        });
       }
     } else {
       // Fresh: clear everything first
@@ -724,7 +724,7 @@ export const designAgent = task({
       summary = await generateNaturalSummary(prompt, {
         mode: "fresh",
         mainComponents: nodeNames,
-      }, geminiModel);
+      });
     }
 
     return {
