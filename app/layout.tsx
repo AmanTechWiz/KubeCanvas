@@ -22,6 +22,9 @@ const nanum = Nanum_Pen_Script({
 export const metadata: Metadata = {
   title: "KubeCanvas",
   description: "Real-time collaborative system design workspace",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export default function RootLayout({
