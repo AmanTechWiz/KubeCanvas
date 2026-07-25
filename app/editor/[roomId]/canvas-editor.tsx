@@ -30,7 +30,7 @@ import {
 } from "@xyflow/react"
 import { LiveObject, LiveMap } from "@liveblocks/client"
 import "@xyflow/react/dist/style.css"
-import { CanvasNodeComponentMemo } from "@/components/editor/canvas-node"
+import { CanvasNodeComponentMemo, NodeResizeContext, type NodeResizeContextValue } from "@/components/editor/canvas-node"
 import { CanvasEdgeComponent } from "@/components/editor/canvas-edge"
 import {
   ShapePanelContext,
@@ -326,7 +326,7 @@ function FlowCanvas({
   const addNodeMutation = useMutation(
     ({ storage }, payload: AddNodePayload) => {
         try {
-          const { shape, w, h, flowX, flowY, logo, logoCustomSvg, label: presetLabel } = payload
+          const { shape, w, h, flowX, flowY, logo, logoCustomSvg, label: presetLabel, autoEdit } = payload
           const x = flowX - w / 2
           const y = flowY - h / 2
           const id = generateNodeId(shape)
@@ -356,6 +356,7 @@ function FlowCanvas({
                 shape,
                 ...(logo ? { logo } : {}),
                 ...(logoCustomSvg ? { logoCustomSvg } : {}),
+                ...(autoEdit ? { autoEdit: true } : {}),
               }),
               selected: false,
               dragging: false,
@@ -531,6 +532,48 @@ function FlowCanvas({
     }
   }, [])
 
+  // ── Double-click on empty canvas → create text node ──────────────
+  const handlePaneDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Only handle double-clicks directly on the React Flow background,
+      // not on nodes or edges (those have their own double-click handlers).
+      const target = e.target as HTMLElement;
+      const isOnBackground =
+        target.classList.contains("react-flow__pane") ||
+        target.classList.contains("react-flow__background") ||
+        target.closest(".react-flow__background") !== null;
+
+      if (!isOnBackground) return;
+
+      // Convert screen → flow coordinates
+      const rfViewport = document.querySelector(".react-flow__viewport") as HTMLElement | null;
+      const rfContainer = document.querySelector(".react-flow") as HTMLElement | null;
+      if (!rfViewport || !rfContainer) return;
+
+      const rect = rfContainer.getBoundingClientRect();
+      const transform = rfViewport.style.transform || "";
+      const m = transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)\s*scale\(([-\d.e]+)\)/);
+      const tx = m ? parseFloat(m[1]) : 0;
+      const ty = m ? parseFloat(m[2]) : 0;
+      const zoom = m ? parseFloat(m[3]) : 1;
+      const flowX = (e.clientX - rect.left - tx) / zoom;
+      const flowY = (e.clientY - rect.top - ty) / zoom;
+
+      // Create a text node at the clicked position
+      const textDef = SHAPES.find((s) => s.shape === "text");
+      addNodeMutation({
+        shape: "text",
+        w: textDef?.w ?? 200,
+        h: textDef?.h ?? 40,
+        flowX,
+        flowY,
+        label: "",
+        autoEdit: true,
+      });
+    },
+    [addNodeMutation],
+  );
+
   const handleDrop = useCallback(
     (e: DragEvent) => {
       try {
@@ -585,7 +628,7 @@ function FlowCanvas({
           e.preventDefault()
           e.stopPropagation()
           addNodeMutation({
-            shape: "rectangle",
+            shape: "text",
             w: textPayload.w,
             h: textPayload.h,
             flowX: position.x,
@@ -722,7 +765,7 @@ function FlowCanvas({
                 y: (e.clientY - rect.top - ty) / zoom,
               }
               setNativePendingDrop({
-                shape: "rectangle",
+                shape: "text",
                 w: textPayload.w,
                 h: textPayload.h,
                 flowX: pos.x,
@@ -784,6 +827,23 @@ function FlowCanvas({
     }
   }, [addNodeMutation])
 
+  const resizeNodeMutation = useMutation(
+    ({ storage }, nodeId: string, width: number, height: number) => {
+      try {
+        const flow = storage.get("flow")
+        if (!flow) return
+        const nodesMap = flow.get("nodes")
+        const node = nodesMap.get(nodeId)
+        if (!node) return
+        node.set("width", width)
+        node.set("height", height)
+      } catch (err) {
+        console.error("[FlowCanvas] resizeNode error:", err)
+      }
+    },
+    [],
+  )
+
   return (
     <ShapePanelContext.Provider
       value={{
@@ -824,7 +884,9 @@ function FlowCanvas({
         className="h-full w-full"
         onDragOver={handleDragOver}
         onDrop={handleDrop}
+        onDoubleClick={handlePaneDoubleClick}
       >
+        <NodeResizeContext.Provider value={{ resizeNode: resizeNodeMutation }}>
         <ReactFlow
           nodes={safeNodes}
           edges={edges}
@@ -861,6 +923,7 @@ function FlowCanvas({
             color="var(--border-subtle)"
           />
         </ReactFlow>
+        </NodeResizeContext.Provider>
       </div>
     </ShapePanelContext.Provider>
   )

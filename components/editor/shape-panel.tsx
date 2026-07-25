@@ -15,7 +15,6 @@ import {
   serializeShapeDrag,
   serializeTextDrag,
   type ShapeDragPayload,
-  type TextDragPayload,
 } from "@/lib/canvas-shapes";
 import type { NodeShape } from "@/types/canvas";
 import { ClearConfirmButton } from "@/components/editor/clear-confirm";
@@ -34,6 +33,8 @@ export interface AddNodePayload {
   logoCustomSvg?: string;
   /** Pre-set label (used by logo nodes) */
   label?: string;
+  /** When true, node auto-enters edit mode on mount (used for text nodes created via double-click) */
+  autoEdit?: boolean;
 }
 
 interface ShapePanelContextValue {
@@ -60,31 +61,59 @@ const SHAPE_ICONS: Record<NodeShape, React.ComponentType<{ className?: string }>
   circle: Circle,
   cylinder: Cylinder,
   hexagon: Hexagon,
+  text: Type,
 };
 
-// ── Text button (drag to add text anywhere on canvas) ──────────────────
+// ── Text button (click to add at center, or drag to place) ────────────
 function TextButton() {
+  const { addNode } = useShapePanel();
+
+  const viewportToFlow = () => {
+    const rfViewport = document.querySelector(".react-flow__viewport") as HTMLElement | null;
+    const rfContainer = document.querySelector(".react-flow") as HTMLElement | null;
+    if (!rfViewport || !rfContainer) return null;
+
+    const rect = rfContainer.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
+    const transform = rfViewport.style.transform || "";
+    const m = transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)\s*scale\(([-\d.e]+)\)/);
+    const tx = m ? parseFloat(m[1]) : 0;
+    const ty = m ? parseFloat(m[2]) : 0;
+    const zoom = m ? parseFloat(m[3]) : 1;
+
+    return { flowX: (centerX - tx) / zoom, flowY: (centerY - ty) / zoom };
+  };
+
+  const handleClick = () => {
+    const pos = viewportToFlow();
+    if (!pos) return;
+    addNode({ shape: "text", w: 200, h: 40, ...pos, label: "", autoEdit: true });
+  };
+
   const handleDragStart = (e: React.DragEvent) => {
     try {
-      const serialized = serializeTextDrag({ text: "", w: 200, h: 60 })
-      e.dataTransfer.setData("application/x-kubecanvas-text", serialized)
-      e.dataTransfer.setData("text/plain", serialized)
-      e.dataTransfer.effectAllowed = "copy"
+      const serialized = serializeTextDrag({ text: "", w: 200, h: 40 });
+      e.dataTransfer.setData("application/x-kubecanvas-text", serialized);
+      e.dataTransfer.setData("text/plain", serialized);
+      e.dataTransfer.effectAllowed = "copy";
 
-      const ghost = document.createElement("div")
-      ghost.style.cssText = "width:1px;height:1px;position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;"
-      document.body.appendChild(ghost)
-      e.dataTransfer.setDragImage(ghost, 0, 0)
-      setTimeout(() => ghost.remove(), 0)
+      const ghost = document.createElement("div");
+      ghost.style.cssText = "width:1px;height:1px;position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;";
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 0, 0);
+      setTimeout(() => ghost.remove(), 0);
     } catch {
       // Defensive
     }
-  }
+  };
 
   return (
     <button
       draggable
       onDragStart={handleDragStart}
+      onClick={handleClick}
       title="Add Text"
       className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground cursor-grab active:cursor-grabbing pointer-events-auto"
     >

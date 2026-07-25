@@ -135,6 +135,8 @@ export function useAutosave({
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
+    // Force re-save: clear the snapshot so attemptSave doesn't skip
+    lastSavedRef.current = "";
     save();
   }, [save]);
 

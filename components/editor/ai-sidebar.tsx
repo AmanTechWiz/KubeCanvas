@@ -618,7 +618,7 @@ function ChatTab({
         ?? (output.mode === "fresh"
           ? `Designed an architecture with ${output.nodesCount ?? "several"} components.`
           : `Updated the architecture with the requested changes.`)
-      const summary = `✓ ${rawSummary}`
+      const summary = rawSummary
 
       setMessages((prevMessages) => {
         // Already completed + summary present (e.g. reopen race) — no-op
@@ -1050,6 +1050,8 @@ function ChatTab({
 // separate hook that conditionally calls useRun via SWR's null-key skip.
 function usePolledMetadata(runId: string, accessToken: string | undefined) {
   const [phase, setPhase] = useState("")
+  const [status, setStatus] = useState<string>("")
+  const [output, setOutput] = useState<any>(null)
 
   useEffect(() => {
     if (!accessToken || !runId) return
@@ -1070,10 +1072,15 @@ function usePolledMetadata(runId: string, accessToken: string | undefined) {
         const data = await res.json()
         const p = String(data?.metadata?.phase ?? "")
         if (p) setPhase(p)
+        const s = String(data?.status ?? "")
+        if (s) setStatus(s)
+        if (data?.output) setOutput(data.output)
         // Stop polling once the run is done
-        if (data?.isCompleted && interval) {
-          clearInterval(interval)
-          interval = null
+        if (s === "COMPLETED" || s === "FAILED" || s === "CANCELED") {
+          if (interval) {
+            clearInterval(interval)
+            interval = null
+          }
         }
       } catch {
         // Ignore — realtime is primary
@@ -1092,7 +1099,7 @@ function usePolledMetadata(runId: string, accessToken: string | undefined) {
     }
   }, [runId, accessToken])
 
-  return { phase }
+  return { phase, status, output }
 }
 
 function SpecExportStatusCard({
@@ -1146,7 +1153,7 @@ function SpecExportStatusCard({
   // useRun doesn't support `enabled`, so we gate it behind accessToken availability.
   const polledMetadata = usePolledMetadata(runId, accessToken)
 
-  const status = run?.status
+  const status = run?.status || polledMetadata.status
   const isDone = status === "COMPLETED" || status === "FAILED" || status === "CANCELED"
   const isRunning = !isDone && status !== undefined
 
@@ -1157,12 +1164,25 @@ function SpecExportStatusCard({
     }
   }, [isDone, status, onTerminal])
 
+  // Fallback: if realtime never delivered onComplete, use polled output
+  const onCompleteCalledRef = useRef(false)
+  useEffect(() => {
+    if (isDone && status === "COMPLETED" && polledMetadata.output?.exportId && !onCompleteCalledRef.current) {
+      onCompleteCalledRef.current = true
+      onComplete?.(polledMetadata.output.exportId)
+    }
+  }, [isDone, status, polledMetadata.output, onComplete])
+
   // Prefer realtime metadata, fall back to polled metadata
   const realtimePhase = String((run as any)?.metadata?.phase ?? "")
   const phase = realtimePhase || polledMetadata.phase
 
   const phaseLabel =
-    phase === "reading"
+    isDone
+      ? status === "COMPLETED"
+        ? "Complete"
+        : "Failed"
+      : phase === "reading"
       ? "Reading Architecture..."
       : phase === "analyzing"
       ? "Analyzing Components..."
@@ -1170,12 +1190,6 @@ function SpecExportStatusCard({
       ? "Generating Specifications..."
       : phase === "packaging"
       ? "Packaging Files..."
-      : phase === "complete"
-      ? "Complete"
-      : isDone
-      ? status === "COMPLETED"
-        ? "Complete"
-        : "Failed"
       : "Starting..."
 
   const handleCancel = useCallback(async () => {
@@ -1640,7 +1654,7 @@ function SpecsTab({ projectId }: { projectId: string }) {
                       </div>
                       {/* Text */}
                       <div className="min-w-0 flex-1 pt-px">
-                        <p className="text-[13px] font-medium leading-snug text-foreground/70">
+                        <p className="text-[13px] font-semibold leading-snug text-foreground">
                           {step.title}
                         </p>
                         {step.desc && (
@@ -1730,11 +1744,11 @@ export function AiSidebar({
     >
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] px-4">
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-0.5">
           <span className="text-[13px] font-normal tracking-[-0.01em] leading-tight text-foreground">
             KubeAI
           </span>
-          <span className="text-[10px] leading-tight text-muted-foreground/50">
+          <span className="text-[12px] font-medium leading-tight text-muted-foreground">
             AI can make mistakes
           </span>
         </div>
@@ -1743,7 +1757,7 @@ export function AiSidebar({
             variant="ghost"
             size="icon-sm"
             onClick={() => setConfirmOpen(true)}
-            className="cursor-pointer rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.1] hover:text-[var(--state-error)]"
+            className="cursor-pointer !rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.1] hover:text-[var(--state-error)]"
           >
             <Trash2 className="size-4" />
           </Button>
@@ -1814,50 +1828,42 @@ export function AiSidebar({
       {/* Clear chat confirmation dialog */}
       {confirmOpen &&
         ReactDOM.createPortal(
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-xs"
-            onClick={() => setConfirmOpen(false)}
-          >
+          <>
             <div
-              className="mx-4 w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#111114] p-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-4 mb-5">
-                <div className="flex size-12 items-center justify-center rounded-full bg-[var(--state-error)]/10">
-                  <Trash2 className="size-5 text-[var(--state-error)]" />
+              className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs supports-backdrop-filter:backdrop-blur-xs"
+              onClick={() => setConfirmOpen(false)}
+            />
+            <div className="fixed inset-0 z-[101] flex items-center justify-center">
+              <div
+                className="w-full max-w-xs rounded-2xl border border-white/[0.08] bg-white/[0.08] backdrop-blur-2xl backdrop-saturate-150 p-5 shadow-[0_8px_40px_rgba(0,0,0,0.5),inset_0_0.5px_0_rgba(255,255,255,0.06)]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="mb-4 text-center text-sm font-semibold text-foreground">
+                  Clear chat history?
+                </p>
+                <p className="mb-4 text-center text-xs text-muted-foreground">
+                  All messages for this project will be deleted. This cannot be undone.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmOpen(false)}
+                    className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-muted-foreground backdrop-blur-xl transition-colors hover:bg-white/[0.08] hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      chatRef.current?.clearChat()
+                      setConfirmOpen(false)
+                    }}
+                    className="flex-1 rounded-xl bg-red-500/80 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-red-500"
+                  >
+                    Clear
+                  </button>
                 </div>
-                <div>
-                  <p className="text-sm font-normal tracking-[-0.01em] text-foreground">
-                    Clear chat history?
-                  </p>
-                  <p className="text-xs text-muted-foreground/80">
-                    All messages for this project will be deleted. This cannot be
-                    undone.
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmOpen(false)}
-                  className="cursor-pointer rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:text-foreground"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    chatRef.current?.clearChat()
-                    setConfirmOpen(false)
-                  }}
-                  className="cursor-pointer rounded-lg bg-[var(--state-error)] text-white hover:bg-[var(--state-error)]/80"
-                >
-                  Clear
-                </Button>
               </div>
             </div>
-          </div>,
+          </>,
           document.body,
         )}
     </div>

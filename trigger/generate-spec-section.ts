@@ -375,12 +375,12 @@ Rules:
 
 Your task: generate a file whose ENTIRE content is literally just this one word:
 
-AGENTS.md
+@AGENTS.md
 
-Nothing else. No heading, no explanation, no markdown. The word "AGENTS.md" on a single line. This tells Claude Code to read AGENTS.md (the universal agent instruction file) for the actual instructions.
+Nothing else. No heading, no explanation, no markdown. The word "@AGENTS.md" on a single line. This tells Claude Code to read AGENTS.md (the universal agent instruction file) for the actual instructions.
 
 Output ONLY:
-AGENTS.md`,
+@AGENTS.md`,
   },
 
   instructions: {
@@ -399,7 +399,7 @@ CLAUDE.md also exists at the project root as a pointer file that references this
 
 Read this file in full before taking any action. Obey it exactly.
 
-This is the single source of truth for any coding agent: Claude Code, OpenAI Codex CLI, Google Gemini CLI, Cursor, Windsurf, GitHub Copilot, RooCode, JetBrains Junie, or any other AGENTS.md-aware tool.
+This is the single source of truth for any coding agent: Claude Code, OpenAI Codex CLI, Google Gemini CLI, OpenCode, Pi Agent, Cursor, Windsurf, GitHub Copilot, RooCode, JetBrains Junie, or any other AGENTS.md-aware tool.
 
 ---
 
@@ -424,9 +424,11 @@ On every session start, do this in exact order:
 ## 1. Interactive Q&A (ALWAYS FIRST)
 
 Open .ai-spec/IMPLEMENTATION_QUESTIONS.md. Ask questions ONE AT A TIME using your native question tool.
+ALWAYS First think and find your native question tool to ask questions in the TUI to the user , once found out then start asking. If not found then ask normally.
+Few examples of tool names as per cli/coding agent/ ide , try what you can use to ask question in TUI :
 
-- OpenCode CLI: Use the \`question\` tool (TUI selection).
-- Claude Code (VS Code): Use \`AskUserQuestion\` or \`vscode_askQuestions\`.
+- OpenCode CLI: Use the \`question\` tool (for TUI selection).
+- Claude Code or VS Code: Use \`AskUserQuestion\`.
 - OpenAI Codex CLI: Use \`ask_user_question\` or \`request_user_input\`.
 - GitHub Copilot / VS Code: Use \`vscode_askQuestions\`.
 - Cursor / Windsurf / RooCode / Junie: Use your interactive prompt tool.
@@ -609,7 +611,7 @@ If any box is unchecked, fix that first.`,
   },
 };
 
-// ── Task ────────────────────────────────────────────────────────────
+// ── Task ───
 
 export const generateSpecSection = schemaTask({
   id: "generate-spec-section",

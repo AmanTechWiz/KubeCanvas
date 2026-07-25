@@ -21,6 +21,7 @@ frontend_report.md
 opencode.json
 skills-lock.json
 package-lock.json
+bun.lock
 
 # Logs
 *.log

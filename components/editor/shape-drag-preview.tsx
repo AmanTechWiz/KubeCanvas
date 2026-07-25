@@ -94,6 +94,7 @@ const GHOST_SHAPES: Record<NodeShape, React.ComponentType<{ color: string }>> = 
   diamond: GhostDiamond,
   hexagon: GhostHexagon,
   cylinder: GhostCylinder,
+  text: GhostText,
 };
 
 const GHOST_DEFAULT_COLOR = NODE_COLORS[0].bg;

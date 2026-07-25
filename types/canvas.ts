@@ -6,7 +6,8 @@ export type NodeShape =
   | "diamond"
   | "circle"
   | "cylinder"
-  | "hexagon";
+  | "hexagon"
+  | "text";
 
 // ── Node color palette ─────────────────────────────────────────────────
 export interface NodeColor {
@@ -38,6 +39,8 @@ export interface CanvasNodeData {
   logo?: string;
   /** Inline SVG for icons not in tech-stack-icons */
   logoCustomSvg?: string;
+  /** When true, node auto-enters edit mode on mount (used for text nodes created via double-click) */
+  autoEdit?: boolean;
   [key: string]: unknown; // -> using this for future additional properties!!
 }
 

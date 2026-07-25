@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState, Component } from "react";
+import { memo, useCallback, useRef, useState, Component, createContext, useContext } from "react";
 import { Handle, Position, NodeResizer, useReactFlow, type NodeProps } from "@xyflow/react";
 import type { CanvasNode, NodeColor } from "@/types/canvas";
 import { NODE_COLORS, DEFAULT_NODE_COLOR, textColorForBg } from "@/types/canvas";
@@ -6,6 +6,13 @@ import type { NodeShape } from "@/types/canvas";
 import { ColorToolbar } from "@/components/editor/color-toolbar";
 import StackIcon from "tech-stack-icons";
 import { LOGO_CATEGORIES } from "@/lib/logo-data";
+
+// ── Context for resizing nodes via Liveblocks ────────────────────────
+export interface NodeResizeContextValue {
+  resizeNode: (id: string, width: number, height: number) => void;
+}
+
+export const NodeResizeContext = createContext<NodeResizeContextValue | null>(null);
 
 // ── Error Boundary for invalid StackIcon logos ──────────────────────
 interface IconFallbackProps {
@@ -212,37 +219,122 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   const { label, color, shape, logo } = data;
   const fill = color || DEFAULT_NODE_COLOR.bg;
   const shapeType: NodeShape = (shape as NodeShape) || "rectangle";
+  const isTextShape = shapeType === "text";
   const nodeTextColor: string =
-    (data.textColor as string) || textColorForBg(fill);
-  const { updateNode } = useReactFlow();
+    (data.textColor as string) || textColorForBg(isTextShape ? "#1F1F1F" : fill);
+  const reactFlow = useReactFlow();
+  const nodeResize = useContext(NodeResizeContext);
   const logoName = (logo as string) || null;
   const logoCustomSvg = (data.logoCustomSvg as string) || null;
+  const autoEdit = data.autoEdit === true;
 
   // ── Label editing state ──────────────────────────────────────────
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(label || "");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const committedRef = useRef(false);
+
+  // Auto-resize textarea to fit content (used by text shape)
+  const autoResizeTextarea = useCallback(() => {
+    const ta = inputRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, []);
+
+  // Measure text and resize node via Liveblocks (for text shape)
+  const resizeToContent = useCallback(() => {
+    if (!nodeResize) return;
+    const rfNode = reactFlow.getNode(id);
+    const currentWidth = rfNode?.measured?.width || rfNode?.width || 200;
+    const currentHeight = rfNode?.measured?.height || rfNode?.height || 40;
+
+    const measurer = document.createElement("div");
+    measurer.style.cssText = `
+      position: absolute; visibility: hidden; white-space: pre-wrap;
+      word-break: break-word; font-size: 14px; font-weight: 500;
+      line-height: 1.25; padding: 4px 8px; width: ${currentWidth - 16}px;
+    `;
+    measurer.textContent = draft || " ";
+    document.body.appendChild(measurer);
+    const textHeight = measurer.scrollHeight;
+    document.body.removeChild(measurer);
+
+    const requiredHeight = Math.max(40, textHeight + 16);
+    const newHeight = Math.max(currentHeight, requiredHeight);
+
+    if (newHeight !== currentHeight) {
+      nodeResize.resizeNode(id, currentWidth, newHeight);
+    }
+  }, [id, draft, reactFlow, nodeResize]);
 
   const commitLabel = useCallback(() => {
+    if (committedRef.current) return;
+    committedRef.current = true;
     setEditing(false);
-    updateNode(id, (node) => ({
-      ...node,
-      data: { ...node.data, label: draft },
-    }));
-  }, [id, draft, updateNode]);
+    reactFlow.updateNode(id, (node) => ({ ...node, data: { ...node.data, label: draft, autoEdit: false } }));
+
+    // For text shape, always resize to fit content
+    if (isTextShape && nodeResize) {
+      resizeToContent();
+    } else if (draft && draft.length > 0 && nodeResize) {
+      // For regular shapes, only grow height if text wraps
+      const rfNode = reactFlow.getNode(id);
+      const currentWidth = rfNode?.measured?.width || rfNode?.width || 192;
+      const currentHeight = rfNode?.measured?.height || rfNode?.height || 128;
+
+      const measurer = document.createElement("div");
+      measurer.style.cssText = `
+        position: absolute; visibility: hidden; white-space: pre-wrap;
+        word-break: break-word; font-size: 14px; font-weight: 500;
+        line-height: 1.25; padding: 0 8px; width: ${currentWidth - 16}px;
+      `;
+      measurer.textContent = draft;
+      document.body.appendChild(measurer);
+      const textHeight = measurer.scrollHeight;
+      document.body.removeChild(measurer);
+
+      const requiredHeight = Math.max(MIN_HEIGHT, textHeight + 20);
+      const newHeight = Math.max(currentHeight, requiredHeight);
+
+      if (newHeight > currentHeight) {
+        nodeResize.resizeNode(id, currentWidth, newHeight);
+      }
+    }
+  }, [id, draft, isTextShape, reactFlow, nodeResize, resizeToContent]);
 
   const cancelEdit = useCallback(() => {
+    committedRef.current = false;
     setEditing(false);
     setDraft(label || "");
   }, [label]);
+
+  // ── Auto-edit on mount (for text nodes created via double-click) ──
+  const autoEditDone = useRef(false);
+  if (autoEdit && !autoEditDone.current && !editing) {
+    autoEditDone.current = true;
+    committedRef.current = false;
+    // Defer state update to avoid setState-during-render
+    setTimeout(() => {
+      setEditing(true);
+      setDraft(label || "");
+    }, 0);
+  }
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       setDraft(label || "");
       setEditing(true);
-      // Focus the textarea on the next frame so it's rendered
-      requestAnimationFrame(() => inputRef.current?.focus());
+      // Focus the textarea and auto-resize on the next frame
+      requestAnimationFrame(() => {
+        const ta = inputRef.current;
+        if (ta) {
+          ta.focus();
+          ta.style.height = "auto";
+          ta.style.height = `${ta.scrollHeight}px`;
+        }
+      });
     },
     [label],
   );
@@ -255,90 +347,116 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   // ── Color toolbar handler ────────────────────────────────────────
   const handleColorSelect = useCallback(
     (c: NodeColor) => {
-      updateNode(id, (node) => ({
+      reactFlow.updateNode(id, (node) => ({
         ...node,
         data: { ...node.data, color: c.bg, textColor: c.text },
       }));
     },
-    [id, updateNode],
+    [id, reactFlow],
   );
 
   return (
-    <div className="relative group/node w-full h-full">
-      {/* ── Color toolbar (visible only when selected) ─────────── */}
-      {selected && (
+    <div className={`relative group/node w-full h-full ${isTextShape ? "" : "min-w-[60px]"}`}>
+      {/* ── Color toolbar (visible only when selected, not for text shape) ── */}
+      {selected && !isTextShape && (
         <ColorToolbar activeColor={fill} onSelect={handleColorSelect} />
       )}
 
-      {/* ── Resize handles (visible only when selected) ─────────── */}
-      <NodeResizer
-        isVisible={!!selected}
-        minWidth={MIN_WIDTH}
-        minHeight={MIN_HEIGHT}
-        keepAspectRatio={false}
-        handleClassName="!w-2.5 !h-2.5 !rounded-full !bg-white/60 !border-0 hover:!bg-white hover:!shadow-[0_0_6px_rgba(255,255,255,0.4)] transition-all duration-150"
-        lineClassName="!border-white/30"
-        autoScale={false}
-      />
+      {/* ── Resize handles (visible only when selected, not for text shape) ── */}
+      {!isTextShape && (
+        <NodeResizer
+          isVisible={!!selected}
+          minWidth={MIN_WIDTH}
+          minHeight={MIN_HEIGHT}
+          keepAspectRatio={false}
+          handleClassName="!w-2.5 !h-2.5 !rounded-full !bg-white/60 !border-0 hover:!bg-white hover:!shadow-[0_0_6px_rgba(255,255,255,0.4)] transition-all duration-150"
+          lineClassName="!border-white/30"
+          autoScale={false}
+        />
+      )}
 
       {/* Connection handles — both source and target on every side.
-          Renders flat (no wrapper elements) so ReactFlow can position
-          handles correctly at the node border. */}
-      <NodeHandle position={Position.Top} type="source" />
-      <NodeHandle position={Position.Top} type="target" />
-      <NodeHandle position={Position.Bottom} type="source" />
-      <NodeHandle position={Position.Bottom} type="target" />
-      <NodeHandle position={Position.Left} type="source" />
-      <NodeHandle position={Position.Left} type="target" />
-      <NodeHandle position={Position.Right} type="source" />
-      <NodeHandle position={Position.Right} type="target" />
+          Not shown for text shape (standalone, no connections). */}
+      {!isTextShape && (
+        <>
+          <NodeHandle position={Position.Top} type="source" />
+          <NodeHandle position={Position.Top} type="target" />
+          <NodeHandle position={Position.Bottom} type="source" />
+          <NodeHandle position={Position.Bottom} type="target" />
+          <NodeHandle position={Position.Left} type="source" />
+          <NodeHandle position={Position.Left} type="target" />
+          <NodeHandle position={Position.Right} type="source" />
+          <NodeHandle position={Position.Right} type="target" />
+        </>
+      )}
 
-      {/* Shape background */}
-      <ShapeRenderer shape={shapeType} fill={fill} selected={!!selected} />
+      {/* Shape background — hidden for text shape */}
+      {!isTextShape && (
+        <ShapeRenderer shape={shapeType} fill={fill} selected={!!selected} />
+      )}
 
       {/* Label + optional logo — centered, editable on double-click */}
       {editing ? (
         <div
-          className="absolute inset-0 flex items-center justify-center z-10 pointer-events-auto"
+          className={`absolute inset-0 z-10 pointer-events-auto overflow-visible ${
+            isTextShape ? "flex items-start justify-start" : "flex items-center justify-center"
+          }`}
           onPointerDown={stopPointer}
         >
           <textarea
             ref={inputRef}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              autoResizeTextarea();
+            }}
+            onPaste={() => {
+              requestAnimationFrame(() => autoResizeTextarea());
+            }}
             onBlur={commitLabel}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 e.stopPropagation();
                 cancelEdit();
               }
-              // Prevent Enter from inserting a newline — commit instead
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 commitLabel();
               }
-              // Prevent all keys from reaching the canvas (drag/pan)
               e.stopPropagation();
             }}
             onPointerDown={stopPointer}
-            className="resize-none bg-transparent text-sm font-medium text-center outline-none border-none overflow-hidden leading-snug"
-            placeholder="Label"
-            rows={1}
-            style={{ width: "80%", minWidth: 40, color: nodeTextColor }}
+            className={`resize-none bg-transparent text-sm font-medium outline-none border-none leading-snug ${
+              isTextShape ? "w-full" : "text-center"
+            }`}
+            placeholder={isTextShape ? "Type something…" : "Label"}
+            style={{
+              color: isTextShape ? (nodeTextColor === "#EDEDED" ? "#EDEDED" : nodeTextColor) : nodeTextColor,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              overflow: "hidden",
+              ...(isTextShape
+                ? { padding: "4px 8px", minWidth: 60 }
+                : { width: "80%", minWidth: 40 }),
+            }}
           />
         </div>
       ) : (
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center cursor-text gap-1"
+          className={`absolute inset-0 flex cursor-text gap-1 ${
+            isTextShape
+              ? `items-start justify-start rounded px-1 ${selected ? "border border-white/30" : "border border-transparent"}`
+              : "flex-col items-center justify-center"
+          }`}
           onDoubleClick={handleDoubleClick}
         >
-          {/* Logo icon (when present) */}
-          {(logoCustomSvg || (logoName && LOGO_CUSTOM_SVG_MAP[logoName])) ? (
+          {/* Logo icon (when present, not for text shape) */}
+          {!isTextShape && (logoCustomSvg || (logoName && LOGO_CUSTOM_SVG_MAP[logoName])) ? (
             <div
               className="pointer-events-none flex-shrink-0 h-7 w-7 [&_svg]:h-full [&_svg]:w-full"
               dangerouslySetInnerHTML={{ __html: logoCustomSvg || LOGO_CUSTOM_SVG_MAP[logoName!] }}
             />
-          ) : logoName ? (
+          ) : !isTextShape && logoName ? (
             <div className="pointer-events-none flex-shrink-0">
               <IconBoundary label={label} nodeTextColor={nodeTextColor}>
                 <StackIcon
@@ -351,10 +469,16 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           ) : null}
           {label ? (
             <span
-              className="text-sm font-medium px-2 truncate max-w-full pointer-events-none"
-              style={{ color: nodeTextColor }}
+              className={`text-sm font-medium pointer-events-none whitespace-pre-wrap break-words leading-snug ${
+                isTextShape ? "px-1 max-w-full" : "px-2 max-w-full"
+              }`}
+              style={{ color: isTextShape ? (nodeTextColor === "#EDEDED" ? "#EDEDED" : nodeTextColor) : nodeTextColor }}
             >
               {label}
+            </span>
+          ) : isTextShape ? (
+            <span className="text-sm select-none px-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Type something…
             </span>
           ) : (
             <span className="text-sm pointer-events-none select-none" style={{ color: "rgba(255,255,255,0.3)" }}>
