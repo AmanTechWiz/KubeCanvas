@@ -1,7 +1,3 @@
-// ── Chat Text Formatting ─────────────────────────────────────────────
-// Rich formatting for AI chat responses: lists, code blocks, headings,
-// bold/italic, and highlighted tech keywords.
-// ──────────────────────────────────────────────────────────────────────
 
 import React from "react";
 
