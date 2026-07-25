@@ -17,17 +17,16 @@ import {
 } from "@/lib/validate-architecture";
 import { LOGO_CATEGORIES } from "@/lib/logo-data";
 
-// ── Clients ─────────────────────────────────────────────────────────
+// ── Clients (lazy — initialized at runtime, not import time) ──────────
 
-const googleProvider = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_AI__API_KEY!,
-});
+function getLiveblocks() {
+  return new Liveblocks({ secret: process.env.LIVEBLOCKS_SECRET_KEY! });
+}
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-
-const liveblocks = new Liveblocks({
-  secret: process.env.LIVEBLOCKS_SECRET_KEY!,
-});
+function getGeminiModel() {
+  const provider = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_AI__API_KEY! });
+  return provider(process.env.GEMINI_MODEL || "gemini-2.0-flash");
+}
 
 // ── Color Map ───────────────────────────────────────────────────────
 
@@ -100,8 +99,6 @@ function stripInvalidLogos(arch: Architecture): Architecture {
 // we use a fast LLM call to generate ONE natural sentence describing what
 // happened — the way a colleague would explain their work.
 
-const SUMMARY_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-
 async function generateNaturalSummary(
   userPrompt: string,
   info: {
@@ -112,6 +109,7 @@ async function generateNaturalSummary(
     updatedCount?: number;
     mainComponents?: string[];
   },
+  model?: ReturnType<typeof getGeminiModel>,
 ): Promise<string> {
   // Build a compact JSON description of what changed
   const changeDesc: Record<string, any> = { mode: info.mode };
@@ -123,7 +121,7 @@ async function generateNaturalSummary(
 
   try {
     const { text } = await generateText({
-      model: googleProvider(SUMMARY_MODEL),
+      model: model ?? getGeminiModel(),
       system: `You are a senior software architect summarising changes to a system diagram for a colleague.
 
 Rules:
@@ -346,6 +344,10 @@ export const designAgent = task({
     const { prompt, roomId, currentArchitecture } = payload;
     const isModification = !!currentArchitecture && (currentArchitecture.nodes.length > 0 || currentArchitecture.edges.length > 0);
 
+    // Initialize clients at runtime (env vars not available at import time during Trigger.dev build)
+    const liveblocks = getLiveblocks();
+    const geminiModel = getGeminiModel();
+
     // ── Detect clear canvas intent ──────────────────────────────────
     // The agent must NOT clear the canvas itself. Instead, it tells the
     // user to use the Clear All button in the toolbar. The only exception
@@ -395,7 +397,7 @@ export const designAgent = task({
         : prompt;
 
       const result = await generateObject({
-        model: googleProvider(GEMINI_MODEL),
+        model: geminiModel,
         schema: ArchitectureSchema,
         prompt: `${systemPrompt}\n\nUser request: ${userMessage}`,
         temperature: 0.7,
@@ -643,7 +645,7 @@ export const designAgent = task({
           removed: removedLabels,
           renamed,
           updatedCount,
-        });
+        }, geminiModel);
       }
     } else {
       // Fresh: clear everything first
@@ -722,7 +724,7 @@ export const designAgent = task({
       summary = await generateNaturalSummary(prompt, {
         mode: "fresh",
         mainComponents: nodeNames,
-      });
+      }, geminiModel);
     }
 
     return {

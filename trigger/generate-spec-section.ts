@@ -3,13 +3,12 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import { z } from "zod";
 
-// ── Clients ─────────────────────────────────────────────────────────
+// ── Clients (lazy — initialized at runtime, not import time) ──────────
 
-const googleProvider = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_AI__API_KEY!,
-});
-
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
+function getGeminiModel() {
+  const provider = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_AI__API_KEY! });
+  return provider(process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite");
+}
 
 // ── Section Prompts ─────────────────────────────────────────────────
 
@@ -644,7 +643,7 @@ export const generateSpecSection = schemaTask({
       : '';
 
     const result = await generateText({
-      model: googleProvider(GEMINI_MODEL),
+      model: getGeminiModel(),
       system: sectionConfig.system,
       prompt: `Project: ${projectName}${descriptionContext}\n\nArchitecture data:\n${architectureData}`,
       temperature: 0.7,
