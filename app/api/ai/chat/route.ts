@@ -172,7 +172,7 @@ export async function POST(request: Request) {
       system: systemPrompt,
       messages: modelMessages,
       stopWhen: isStepCount(5),
-      experimental_transform: smoothStream({ chunking: "word" }),
+      experimental_transform: smoothStream({ chunking: "word", delayInMs: 35 }),
       tools: {
         generateArchitecture: tool({
           description:
