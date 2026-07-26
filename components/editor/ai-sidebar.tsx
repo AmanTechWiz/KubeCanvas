@@ -300,6 +300,7 @@ function ChatTab({
   const loadedProjectRef = useRef<string | null>(null)
   const [archRuns, setArchRuns] = useState<Map<string, string>>(new Map())
   const dismissedRef = useRef<Set<string>>(new Set())
+  const archPendingRef = useRef<Set<string>>(new Set())
   const [completedArchitectTexts, setCompletedArchitectTexts] = useState<
     Map<string, string>
   >(new Map())
@@ -314,6 +315,9 @@ function ChatTab({
       body: { projectId },
     }),
     onFinish: ({ message, messages: allMessages }) => {
+      // Clean up archPending flag for completed messages
+      archPendingRef.current.delete(message.id)
+
       // Save to localStorage (with original content including AI text)
       try {
         localStorage.setItem(
@@ -778,6 +782,15 @@ function ChatTab({
               </div>
             ) : (
               <div className="flex flex-col gap-1">
+                {/* Thinking indicator — shown above the streaming message */}
+                {status === "streaming" &&
+                  !hasActiveToolCall &&
+                  message.id === messages[messages.length - 1]?.id && (
+                    <div className="flex items-center gap-2.5 px-1 py-1">
+                      <SpiralSpinner className="size-4" />
+                      <span className="text-[12px] text-muted-foreground/70">Thinking...</span>
+                    </div>
+                  )}
                 {(() => {
                   // If this message has a tool-generateArchitecture part, skip rendering
                   // text parts during streaming to prevent a flash of "I'll build..."
@@ -791,7 +804,9 @@ function ChatTab({
                       // Never show text parts of messages that called generateArchitecture
                       // — the LLM only says "On it." / "Generating now." which adds no value.
                       // The real summary comes from the design agent as a separate message.
-                      if (hasArchTool) return null
+                      // archPendingRef catches the race window where the tool part hasn't
+                      // arrived yet but is about to (set in the input-streaming case below).
+                      if (hasArchTool || archPendingRef.current.has(message.id)) return null
                       return (
                         <div key={i} className="max-w-[85%]">
                           <div className="rounded-xl rounded-bl-md bg-white/[0.06] border border-white/[0.08] px-4 py-2.5 text-[13px] leading-relaxed text-foreground">
@@ -804,6 +819,7 @@ function ChatTab({
                       switch (part.state) {
                         case "input-streaming":
                         case "input-available":
+                          archPendingRef.current.add(message.id)
                           return (
                             <div
                               key={i}
@@ -938,14 +954,6 @@ function ChatTab({
             )}
           </div>
         ))}
-
-        {/* Loading indicator — hidden when a tool call is active to avoid duplicate spinners */}
-        {status === "streaming" && !hasActiveToolCall && (
-          <div className="flex items-center gap-2.5 px-1 py-1">
-            <SpiralSpinner className="size-4" />
-            <span className="text-[12px] text-muted-foreground/70">Thinking...</span>
-          </div>
-        )}
       </div>
 
       {/* Input area */}
