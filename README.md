@@ -78,7 +78,7 @@ flowchart LR
     end
 
     subgraph LLM["LLM"]
-        Gemini["Gemini 2.0 Flash<br/>via AI SDK v7"]
+        Gemini["Gemini 3.5 Flash lite<br/>via Google ADK"]
     end
 
     User -->|sign in| Clerk
@@ -206,8 +206,8 @@ Copy `.env.example` to `.env.local` and fill in each value. The same set must al
 | `LIVEBLOCKS_SECRET_KEY` | Liveblocks server (auth, storage access, presence REST) |
 | `TRIGGER_SECRET_KEY` | Trigger.dev SDK auth |
 | `TRIGGER_PROJECT_REF` | Your Trigger.dev project ref (`proj_...`) |
-| `GOOGLE_AI__API_KEY` | Google AI key for Gemini 2.0 Flash |
-| `GEMINI_MODEL` | Model identifier (e.g. `gemini-2.0-flash`) |
+| `GOOGLE_AI__API_KEY` | Google AI key for Gemini AI models |
+| `GEMINI_MODEL` | Model identifier (e.g. `gemini-3.5-flash-lite`) |
 
 ## License
 
